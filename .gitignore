@@ -1,0 +1,11 @@
+
+.env
+datasets/
+uploads/
+__pycache__/
+*.pyc
+v2/__pycache__/
+v2/searches/
+v2/app.log
+v2/eval_run*.log
+.DS_Store

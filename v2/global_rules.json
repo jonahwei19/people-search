@@ -1,0 +1,11 @@
+{
+  "rules": [
+    {
+      "id": "g004",
+      "text": "When a search involves political alignment or Republican-leaning candidates, this is a Trump administration context. PPO (Presidential Personnel Office) vetting is the bar. Organizations like RAND, CSET, and most DC think tanks perceived as Democrat-aligned will not pass PPO vetting regardless of the individual's personal politics.",
+      "scope": "all searches",
+      "source": "seed",
+      "created_at": "2026-03-22T00:00:00Z"
+    }
+  ]
+}
