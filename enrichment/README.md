@@ -156,7 +156,7 @@ for p in ds.profiles:
 The enrichment `Profile` has more fields than the v2 `Profile` (enrichment status, links, etc.). To convert:
 
 ```python
-from v2.models import Profile as V2Profile, ProfileIdentity, ProfileField
+from search.models import Profile as V2Profile, ProfileIdentity, ProfileField
 
 def to_v2(p):
     """Convert enrichment Profile → v2 Profile for scoring."""

@@ -3,7 +3,7 @@
 import json
 import os
 
-from v2.models import Profile, ProfileField, ProfileIdentity
+from search.models import Profile, ProfileField, ProfileIdentity
 
 
 # Map TLS fields to our type system

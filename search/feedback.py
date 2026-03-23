@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import Optional
 
-from v2.gemini_helpers import call_gemini_json
-from v2.models import (
+from search.gemini_helpers import call_gemini_json
+from search.models import (
     DefinedSearch,
     Exemplar,
     FeedbackEvent,

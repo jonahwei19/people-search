@@ -10,8 +10,8 @@ from typing import Optional
 
 from google import genai
 
-from v2 import config
-from v2.models import DefinedSearch, GlobalRule, Profile, ScoreResult
+from search import config
+from search.models import DefinedSearch, GlobalRule, Profile, ScoreResult
 
 PROFILE_CHAR_LIMIT = 3000
 BATCH_SIZE = 40

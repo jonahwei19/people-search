@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from v2.gemini_helpers import call_gemini_json
-from v2.models import DefinedSearch, GlobalRule
+from search.gemini_helpers import call_gemini_json
+from search.models import DefinedSearch, GlobalRule
 
 
 FILTER_SYSTEM = """You are deciding which global rules to inject into a people search.

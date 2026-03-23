@@ -16,10 +16,10 @@ from pathlib import Path
 
 from flask import Blueprint, jsonify, request
 
-from v2.feedback import apply_synthesis, propose_global_rule, synthesize_rules
-from v2.global_filter import filter_global_rules
-from v2.llm_judge import rank_results, score_profiles_sync
-from v2.models import (
+from search.feedback import apply_synthesis, propose_global_rule, synthesize_rules
+from search.global_filter import filter_global_rules
+from search.llm_judge import rank_results, score_profiles_sync
+from search.models import (
     DefinedSearch,
     FeedbackEvent,
     GlobalRule,
@@ -28,13 +28,13 @@ from v2.models import (
     ProfileIdentity,
     ScoreResult,
 )
-from v2.questioner import conversation_to_context, next_question
+from search.questioner import conversation_to_context, next_question
 
 search_bp = Blueprint("search", __name__)
 
-SEARCHES_DIR = Path(__file__).parent / "v2" / "searches"
+SEARCHES_DIR = Path(__file__).parent / "search" / "searches"
 SEARCHES_DIR.mkdir(exist_ok=True)
-GLOBAL_RULES_PATH = Path(__file__).parent / "v2" / "global_rules.json"
+GLOBAL_RULES_PATH = Path(__file__).parent / "search" / "global_rules.json"
 
 SEARCHES: dict[str, DefinedSearch] = {}
 GLOBAL_RULES: GlobalRules = GlobalRules()

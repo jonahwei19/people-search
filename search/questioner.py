@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import Optional
 
-from v2.gemini_helpers import call_gemini, call_gemini_json
-from v2.models import DefinedSearch, GlobalRule
+from search.gemini_helpers import call_gemini, call_gemini_json
+from search.models import DefinedSearch, GlobalRule
 
 QUESTIONER_SYSTEM = """You are helping a team define a people search. The user has described who they're looking for. Your job is to have a short conversation to understand exactly what they mean.
 
