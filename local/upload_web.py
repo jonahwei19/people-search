@@ -21,17 +21,20 @@ import threading
 import uuid
 from pathlib import Path
 
+# Add parent directory to path so we can import enrichment/ and search/
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
 from flask import Flask, request, jsonify, render_template_string
 
 from enrichment import EnrichmentPipeline, FieldType
 from enrichment.schema import FieldMapping
 from enrichment.enrichers import is_valid_linkedin_url
-from search_blueprint import search_bp, init_search, SEARCH_NAV, SEARCH_PAGE, SEARCH_JS
+from local.search_blueprint import search_bp, init_search, SEARCH_NAV, SEARCH_PAGE, SEARCH_JS
 
 app = Flask(__name__)
 app.register_blueprint(search_bp)
 
-UPLOAD_DIR = Path(__file__).parent / "uploads"
+UPLOAD_DIR = Path(__file__).parent.parent / "uploads"
 UPLOAD_DIR.mkdir(exist_ok=True)
 
 PIPELINE: EnrichmentPipeline = None
@@ -1396,7 +1399,7 @@ initApp();
 
 # ── API Routes ───────────────────────────────────────────────
 
-ENV_PATH = Path(__file__).parent / ".env"
+ENV_PATH = Path(__file__).parent.parent / ".env"
 
 MANAGED_KEYS = ["GOOGLE_API_KEY", "BRAVE_API_KEY", "SERPER_API_KEY", "ENRICHLAYER_API_KEY", "ANTHROPIC_API_KEY"]
 
@@ -1810,7 +1813,7 @@ def main():
 
     parser = argparse.ArgumentParser(description="People Search — Upload & Manage")
     parser.add_argument("--port", type=int, default=5556)
-    parser.add_argument("--data-dir", type=str, default=str(Path(__file__).parent / "datasets"))
+    parser.add_argument("--data-dir", type=str, default=str(Path(__file__).parent.parent / "datasets"))
     args = parser.parse_args()
 
     # Load saved API keys from .env (won't override env vars already set)

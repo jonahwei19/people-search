@@ -32,9 +32,9 @@ from search.questioner import conversation_to_context, next_question
 
 search_bp = Blueprint("search", __name__)
 
-SEARCHES_DIR = Path(__file__).parent / "search" / "searches"
+SEARCHES_DIR = Path(__file__).parent.parent / "search" / "searches"
 SEARCHES_DIR.mkdir(exist_ok=True)
-GLOBAL_RULES_PATH = Path(__file__).parent / "search" / "global_rules.json"
+GLOBAL_RULES_PATH = Path(__file__).parent.parent / "search" / "global_rules.json"
 
 SEARCHES: dict[str, DefinedSearch] = {}
 GLOBAL_RULES: GlobalRules = GlobalRules()
