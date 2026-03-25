@@ -364,6 +364,11 @@ class EnrichmentPipeline:
                     profile.resume_url = value
                 case FieldType.LINK_OTHER:
                     profile.other_links.append(value)
+                case FieldType.LINKEDIN_TEXT:
+                    # Pre-enriched LinkedIn text — import directly, skip EnrichLayer
+                    profile.linkedin_enriched = {"context_block": value}
+                    profile.enrichment_status = EnrichmentStatus.ENRICHED
+                    profile.enrichment_log.append("LinkedIn imported from pre-enriched column")
                 case FieldType.CONTENT:
                     profile.content_fields[mapping.target_name] = value
                 case FieldType.METADATA:

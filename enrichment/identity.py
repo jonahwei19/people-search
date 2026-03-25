@@ -588,11 +588,20 @@ class IdentityResolver:
                 if slug_clean == email_local:
                     score += 8
                     reasons.append("slug=email(+8)")
+            # Check slug both as split parts AND as substring
             slug_parts = set(re.split(r"[-_]", slug))
             name_slug_hits = sum(1 for p in name_parts if p in slug_parts)
+            # Also check if name parts appear as substrings (handles "joshsiegle")
+            if name_slug_hits == 0:
+                name_slug_hits = sum(1 for p in name_parts if len(p) >= 4 and p in slug_clean)
             if name_slug_hits:
                 score += name_slug_hits * 2
                 reasons.append(f"slug-name({name_slug_hits})(+{name_slug_hits*2})")
+            # Penalize if slug doesn't contain the last name at all
+            # (catches cases like "joshsiegle" being matched to someone named "Josh Smith")
+            if last and len(last) >= 4 and last not in slug_clean:
+                score -= 1
+                reasons.append("slug-no-last(-1)")
 
             scored.append((score, url, reasons, c.get("title", "")))
 

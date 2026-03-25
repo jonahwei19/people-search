@@ -68,45 +68,70 @@ class LinkedInEnricher:
         self._cost_per_call = 0.10
 
     def enrich_profile(self, profile: Profile) -> EnrichmentResult:
-        """Enrich a single profile's LinkedIn data, then verify the match."""
-        url = profile.linkedin_url
-        if not url or not is_valid_linkedin_url(url):
+        """Enrich a single profile's LinkedIn data, then verify the match.
+
+        If verification fails, tries alternative LinkedIn URLs (stored during
+        identity resolution) before giving up.
+        """
+        # Collect all candidate URLs: primary + alternatives
+        urls_to_try = []
+        if profile.linkedin_url and is_valid_linkedin_url(profile.linkedin_url):
+            urls_to_try.append(profile.linkedin_url)
+        # Add alternatives from enrichment log (stored by identity resolver)
+        for line in profile.enrichment_log:
+            if "linkedin.com/in/" in line:
+                import re as _re
+                for m in _re.finditer(r'https?://(?:\w+\.)?linkedin\.com/in/[\w-]+', line):
+                    url = m.group(0)
+                    if url not in urls_to_try:
+                        urls_to_try.append(url)
+
+        if not urls_to_try:
             return EnrichmentResult(success=False, error="No valid LinkedIn URL")
 
-        url = normalize_linkedin_url(url)
-        data = self._call_api(url)
+        total_cost = 0.0
+        for url in urls_to_try:
+            url = normalize_linkedin_url(url)
+            profile.enrichment_log.append(f"Trying LinkedIn: {url}")
 
-        if data is None:
-            return EnrichmentResult(success=False, error="API returned no data")
-        if data == "OUT_OF_CREDITS":
-            return EnrichmentResult(success=False, error="Out of API credits")
+            data = self._call_api(url)
+            if data == "OUT_OF_CREDITS":
+                return EnrichmentResult(success=False, error="Out of API credits", cost=total_cost)
+            if data is None:
+                profile.enrichment_log.append(f"  → API returned no data")
+                total_cost += self._cost_per_call
+                continue
 
-        parsed = self._parse_response(data)
+            total_cost += self._cost_per_call
+            parsed = self._parse_response(data)
 
-        # ── Verify the enriched profile actually matches the person ──
-        verified, verify_log = self._verify_match(profile, parsed)
-        profile.enrichment_log.extend(verify_log)
+            # Verify the enriched profile matches the person
+            verified, verify_log = self._verify_match(profile, parsed)
+            profile.enrichment_log.extend(verify_log)
 
-        if not verified:
-            # Wrong person — clear the LinkedIn URL, don't store wrong data
-            profile.enrichment_log.append(f"REJECTED LinkedIn: {url} (wrong person)")
-            profile.linkedin_url = ""
-            profile.enrichment_status = EnrichmentStatus.FAILED
-            return EnrichmentResult(success=False, error="LinkedIn profile doesn't match (verification failed)")
+            if verified:
+                profile.linkedin_url = url
+                profile.linkedin_enriched = parsed
+                profile.enrichment_status = EnrichmentStatus.ENRICHED
 
-        profile.linkedin_enriched = parsed
-        profile.enrichment_status = EnrichmentStatus.ENRICHED
+                # Backfill identity fields from enrichment if missing
+                if not profile.name and parsed.get("full_name"):
+                    profile.name = parsed["full_name"]
+                if not profile.organization and parsed.get("current_company"):
+                    profile.organization = parsed["current_company"]
+                if not profile.title and parsed.get("current_title"):
+                    profile.title = parsed["current_title"]
 
-        # Backfill identity fields from enrichment if missing
-        if not profile.name and parsed.get("full_name"):
-            profile.name = parsed["full_name"]
-        if not profile.organization and parsed.get("current_company"):
-            profile.organization = parsed["current_company"]
-        if not profile.title and parsed.get("current_title"):
-            profile.title = parsed["current_title"]
+                return EnrichmentResult(success=True, data=parsed, cost=total_cost)
+            else:
+                profile.enrichment_log.append(f"  REJECTED: {url} (wrong person)")
 
+        # All candidates failed verification
+        profile.linkedin_url = ""
+        profile.enrichment_status = EnrichmentStatus.FAILED
         return EnrichmentResult(
-            success=True, data=parsed, cost=self._cost_per_call
+            success=False, error=f"All {len(urls_to_try)} LinkedIn candidates failed verification",
+            cost=total_cost,
         )
 
     def _verify_match(self, profile: Profile, enriched: dict) -> tuple[bool, list[str]]:
@@ -196,11 +221,26 @@ class LinkedInEnricher:
                 score -= 2
                 log.append(f"  Verify location: MISMATCH ('{profile_city or profile_country}' vs '{enriched_location}')")
 
+        # Thin profile check: if the enriched profile has very little data
+        # (1 or fewer experiences, no headline) but the person's content fields
+        # suggest they should have a rich background, reject
+        exp_count = len(enriched.get("experience", []))
+        has_headline = bool(enriched.get("headline", "").strip() and enriched.get("headline") != "--")
+        if exp_count <= 1 and not has_headline:
+            # Check if the person's content suggests they should have more
+            content_len = sum(len(v) for v in profile.content_fields.values())
+            if content_len > 200:
+                score -= 3
+                log.append(f"  Verify thin profile: PENALTY (only {exp_count} experiences, no headline, but person has rich content)")
+
         # Decision: name must match, and if we have org/location to check,
         # at least one MUST confirm. Org mismatch + location mismatch = definite reject.
-        if checks == 0:
-            log.append(f"  Verify result: ACCEPTED (name match, no org/location to check)")
+        if checks == 0 and score >= 2:
+            log.append(f"  Verify result: ACCEPTED (name match, score={score})")
             return True, log
+        if checks == 0 and score < 2:
+            log.append(f"  Verify result: REJECTED (score={score}, thin profile likely wrong person)")
+            return False, log
 
         if score >= 3:
             log.append(f"  Verify result: ACCEPTED (score={score}, checks={checks})")

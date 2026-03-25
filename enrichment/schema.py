@@ -38,6 +38,7 @@ class FieldType(str, Enum):
     LINK_WEBSITE = "link_website"       # Personal/org website
     LINK_RESUME = "link_resume"         # Google Drive, Dropbox, etc. resume/CV link
     LINK_OTHER = "link_other"           # Other URLs (GitHub, etc.)
+    LINKEDIN_TEXT = "linkedin_text"     # Pre-enriched LinkedIn profile text (skip EnrichLayer)
     CONTENT = "content"
     METADATA = "metadata"
     IGNORE = "ignore"
@@ -171,8 +172,8 @@ class SchemaDetector:
         used_types = set()  # track which identity types are already assigned
 
         for col in columns:
-            samples = [row.get(col, "") for row in sample_rows[:3]]
-            samples = [s for s in samples if s]
+            # Collect up to 3 non-empty samples from all available rows
+            samples = [row.get(col, "") for row in sample_rows if row.get(col, "")][:3]
 
             field_type, confidence = self._classify_column(col, samples, used_types)
 
@@ -202,6 +203,16 @@ class SchemaDetector:
             if re.search(pattern, col_name):
                 # Don't double-assign identity types — except names
                 # (First Name + Last Name should both be identity_name)
+                # But for LinkedIn: check if it's pre-enriched text before skipping
+                if ftype == FieldType.IDENTITY_LINKEDIN and ftype in used_types and samples:
+                    # Already have a LinkedIn URL column — check if this one is pre-enriched text
+                    non_empty = [s for s in samples if s and len(s) > 100]
+                    if non_empty and any(
+                        "experience" in s.lower() or "education" in s.lower()
+                        or "headline" in s.lower() for s in non_empty
+                    ):
+                        return FieldType.LINKEDIN_TEXT, 0.85
+                    continue
                 if ftype in used_types and ftype.value.startswith("identity_") and ftype != FieldType.IDENTITY_NAME:
                     continue
 
@@ -209,7 +220,14 @@ class SchemaDetector:
                 # are "Yes/No" or other non-URL text, the column name is lying
                 if ftype == FieldType.IDENTITY_LINKEDIN and samples:
                     if not any("linkedin.com" in s.lower() for s in samples if s):
-                        # Values don't look like LinkedIn URLs — demote to metadata
+                        # Check if it's pre-enriched LinkedIn text (long text with profile data)
+                        non_empty = [s for s in samples if s and len(s) > 100]
+                        if non_empty and any(
+                            "experience" in s.lower() or "education" in s.lower()
+                            or "headline" in s.lower() for s in non_empty
+                        ):
+                            return FieldType.LINKEDIN_TEXT, 0.85
+                        # Otherwise just metadata ("Yes"/"No")
                         continue
 
                 # Validate: if column says "email" but values aren't emails

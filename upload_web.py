@@ -598,6 +598,7 @@ function renderSchema(maps) {
   maps.forEach((m, i) => {
     const cat = m.field_type.startsWith('identity') ? 'identity'
               : m.field_type.startsWith('link_') ? 'links'
+              : m.field_type === 'linkedin_text' ? 'identity'
               : m.field_type === 'content' ? 'content'
               : m.field_type === 'ignore' ? 'ignore' : 'metadata';
     groups[cat].items.push({...m, idx: i});
@@ -607,7 +608,7 @@ function renderSchema(maps) {
     ['identity_name','Name'],['identity_email','Email'],['identity_linkedin','LinkedIn URL'],
     ['identity_org','Organization'],['identity_title','Title'],['identity_phone','Phone'],
     ['link_twitter','Twitter/X URL'],['link_website','Website URL'],['link_resume','Resume/CV link'],['link_other','Other link'],
-    ['content','Searchable text'],['metadata','Metadata'],['ignore','Ignore']
+    ['linkedin_text','Pre-enriched LinkedIn'],['content','Searchable text'],['metadata','Metadata'],['ignore','Ignore']
   ];
   const opts = types.map(([v,l]) => `<option value="${v}">${l}</option>`).join('');
 
@@ -866,6 +867,7 @@ document.getElementById('profileSearch').oninput = function() {
 function showProfile(idx) {
   const p = window._dsProfiles[idx];
   let html = `<h2>${p.name || 'Unknown'}</h2>`;
+  if (p._dataset_name) html += `<div style="font-size:11px;color:var(--text3);margin-bottom:4px;">From: ${p._dataset_name}</div>`;
   const links = [];
   if (p.email) links.push(p.email);
   if (p.linkedin_url) links.push('<a href="'+p.linkedin_url+'" target="_blank">LinkedIn</a>');
@@ -1274,7 +1276,13 @@ async function searchShowResults(id, sd) {
 async function sRate(pid, pname, rating, btn) {
   const reason = document.getElementById('sr-'+pid)?.value||'';
   const scope = document.getElementById('sg-'+pid)?.checked ? 'global' : 'search';
+  const wasSelected = btn.style.background && btn.style.background !== '';
+  // Clear all buttons first
   btn.parentElement.querySelectorAll('.btn').forEach(b => b.style.background='');
+  if (wasSelected) {
+    // Clicking the same button again = unselect (no feedback sent)
+    return;
+  }
   btn.style.background = rating.includes('yes') ? 'var(--green-light)' : 'var(--red-light)';
   await fetch('/api/search/feedback', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({search_id:sId, profile_id:pid, profile_name:pname, rating, reason, scope})});
 }
@@ -1669,7 +1677,10 @@ def api_profile(profile_id):
         ds = PIPELINE.load(ds_info["id"])
         for p in ds.profiles:
             if p.id == profile_id:
-                return jsonify(p.to_dict())
+                d = p.to_dict()
+                d["_dataset_name"] = ds_info["name"]
+                d["_dataset_id"] = ds_info["id"]
+                return jsonify(d)
     return jsonify({"error": "Profile not found"}), 404
 
 
