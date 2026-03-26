@@ -1360,7 +1360,9 @@ async function searchShowResults(id, sd) {
   if (sd.search_rules?.length) { rp.style.display = 'block'; document.getElementById('search-rules-list').innerHTML = sd.search_rules.map(r => `<div style="padding:3px 0;font-size:12px;">• ${r}</div>`).join(''); }
   else rp.style.display = 'none';
 
-  const {results} = await (await fetch(`/api/search/searches/${id}/results`)).json();
+  const resultsData = await (await fetch(`/api/search/searches/${id}/results`)).json();
+  const results = resultsData.results;
+  const excludedCount = resultsData.excluded_count || 0;
   document.getElementById('search-results-header').innerHTML = `<span id="search-name-display" style="font-weight:600;cursor:pointer;" onclick="searchEditName()" title="Click to rename">${sd.name} <span style="font-size:11px;opacity:0.5;">&#9998;</span></span> — ${results.length} scored (${sd.feedback_log?.length||0} feedback)`;
   document.getElementById('search-results-list').innerHTML = results.slice(0,50).map((r,i) => `
     <div class="card" style="padding:14px;">
@@ -1379,8 +1381,8 @@ async function searchShowResults(id, sd) {
         <label style="font-size:10px;color:var(--text3);white-space:nowrap;cursor:pointer;" title="Check this if your feedback applies to ALL searches, not just this one."><input type="checkbox" id="sg-${r.id}"> global <span style="display:inline-block;width:13px;height:13px;border-radius:50%;background:var(--border);text-align:center;font-size:9px;line-height:13px;color:var(--text2);cursor:help;">i</span></label>
       </div>
     </div>`).join('');
-  if (data.excluded_count > 0) {
-    document.getElementById('search-results-list').innerHTML += `<div style="text-align:center;padding:12px;font-size:12px;color:var(--text3);cursor:pointer;" onclick="sShowExcluded()">${data.excluded_count} hidden profile${data.excluded_count>1?'s':''} — click to show</div>`;
+  if (excludedCount > 0) {
+    document.getElementById('search-results-list').innerHTML += `<div style="text-align:center;padding:12px;font-size:12px;color:var(--text3);cursor:pointer;" onclick="sShowExcluded()">${excludedCount} hidden profile${excludedCount>1?'s':''} — click to show</div>`;
   }
   sShow('results');
 }
