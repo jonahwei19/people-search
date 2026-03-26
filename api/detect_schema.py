@@ -1,9 +1,11 @@
-"""POST /api/detect_schema — Upload file and auto-detect column schema."""
+"""POST /api/detect_schema — Detect column schema from uploaded file content."""
 
 from http.server import BaseHTTPRequestHandler
+from pathlib import Path
+import tempfile
 
 from api._helpers import (
-    require_auth, json_response, parse_multipart, save_temp_file,
+    require_auth, json_response, read_json_body, parse_multipart, save_temp_file,
     count_rows, get_pipeline,
 )
 
@@ -14,13 +16,26 @@ class handler(BaseHTTPRequestHandler):
         if not account:
             return
 
-        fields, files = parse_multipart(self)
-        if "file" not in files:
-            json_response(self, 400, {"error": "No file provided"})
-            return
+        content_type = self.headers.get("Content-Type", "")
 
-        filename, data = files["file"]
-        filepath = save_temp_file(filename, data)
+        # Support both JSON body (large files) and multipart FormData (small files)
+        if "application/json" in content_type:
+            body = read_json_body(self)
+            if not body or not body.get("content"):
+                json_response(self, 400, {"error": "No file content provided"})
+                return
+            filename = body.get("filename", "upload.csv")
+            suffix = ".json" if filename.endswith(".json") else ".csv"
+            tmp = Path(tempfile.mktemp(suffix=suffix))
+            tmp.write_text(body["content"], encoding="utf-8")
+            filepath = tmp
+        else:
+            fields, files = parse_multipart(self)
+            if "file" not in files:
+                json_response(self, 400, {"error": "No file provided"})
+                return
+            fname, data = files["file"]
+            filepath = save_temp_file(fname, data)
 
         try:
             pipeline = get_pipeline(account["account_id"])

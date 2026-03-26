@@ -135,14 +135,24 @@ def api_save_keys():
 
 @app.route("/api/detect-schema", methods=["POST"])
 def api_detect_schema():
-    if "file" not in request.files:
-        return jsonify({"error": "No file provided"}), 400
-    f = request.files["file"]
-    if not f.filename:
-        return jsonify({"error": "Empty filename"}), 400
-
-    filepath = UPLOAD_DIR / f"{uuid.uuid4().hex[:8]}_{f.filename}"
-    f.save(str(filepath))
+    # Support both JSON body (large files) and multipart FormData
+    if request.is_json:
+        data = request.json
+        content = data.get("content", "")
+        filename = data.get("filename", "upload.csv")
+        if not content:
+            return jsonify({"error": "No file content"}), 400
+        suffix = ".json" if filename.endswith(".json") else ".csv"
+        filepath = UPLOAD_DIR / f"{uuid.uuid4().hex[:8]}_{filename}"
+        filepath.write_text(content, encoding="utf-8")
+    else:
+        if "file" not in request.files:
+            return jsonify({"error": "No file provided"}), 400
+        f = request.files["file"]
+        if not f.filename:
+            return jsonify({"error": "Empty filename"}), 400
+        filepath = UPLOAD_DIR / f"{uuid.uuid4().hex[:8]}_{f.filename}"
+        f.save(str(filepath))
 
     try:
         ms = PIPELINE.detect_schema(filepath)
@@ -157,15 +167,23 @@ def api_detect_schema():
 
 @app.route("/api/prepare", methods=["POST"])
 def api_prepare():
-    if "file" not in request.files:
-        return jsonify({"error": "No file provided"}), 400
-
-    f = request.files["file"]
-    name = request.form.get("name", "")
-    raw = json.loads(request.form.get("mappings", "[]"))
-
-    filepath = UPLOAD_DIR / f"{uuid.uuid4().hex[:8]}_{f.filename}"
-    f.save(str(filepath))
+    # Support both JSON body (large files) and multipart FormData
+    if request.is_json:
+        data = request.json
+        content = data.get("content", "")
+        filename = data.get("filename", "upload.csv")
+        name = data.get("name", "")
+        raw_mappings = data.get("mappings", [])
+        if not content:
+            return jsonify({"error": "No file content"}), 400
+        filepath = UPLOAD_DIR / f"{uuid.uuid4().hex[:8]}_{filename}"
+        filepath.write_text(content, encoding="utf-8")
+    else:
+        f = request.files["file"]
+        name = request.form.get("name", "")
+        raw_mappings = json.loads(request.form.get("mappings", "[]"))
+        filepath = UPLOAD_DIR / f"{uuid.uuid4().hex[:8]}_{f.filename}"
+        f.save(str(filepath))
 
     try:
         fmaps = [FieldMapping(
@@ -174,7 +192,7 @@ def api_prepare():
             target_name=m.get("target_name", m["source_column"]),
             sample_values=m.get("sample_values", []),
             confidence=m.get("confidence", 0.5),
-        ) for m in raw]
+        ) for m in raw_mappings]
 
         dataset, cost = PIPELINE.prepare(filepath, fmaps, name=name)
         PIPELINE.save(dataset)

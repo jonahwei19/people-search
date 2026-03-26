@@ -1,10 +1,12 @@
 """POST /api/prepare — Parse file with confirmed mappings, return cost estimate."""
 
 import json
+import tempfile
 from http.server import BaseHTTPRequestHandler
+from pathlib import Path
 
 from api._helpers import (
-    require_auth, json_response, parse_multipart, save_temp_file,
+    require_auth, json_response, read_json_body, parse_multipart, save_temp_file,
     get_pipeline, get_storage,
 )
 from enrichment.schema import FieldMapping, FieldType
@@ -17,15 +19,29 @@ class handler(BaseHTTPRequestHandler):
         if not account:
             return
 
-        fields, files = parse_multipart(self)
-        if "file" not in files:
-            json_response(self, 400, {"error": "No file provided"})
-            return
+        content_type = self.headers.get("Content-Type", "")
 
-        filename, data = files["file"]
-        filepath = save_temp_file(filename, data)
-        name = fields.get("name", "")
-        raw_mappings = json.loads(fields.get("mappings", "[]"))
+        # Support both JSON body (large files) and multipart FormData
+        if "application/json" in content_type:
+            body = read_json_body(self)
+            if not body or not body.get("content"):
+                json_response(self, 400, {"error": "No file content provided"})
+                return
+            filename = body.get("filename", "upload.csv")
+            suffix = ".json" if filename.endswith(".json") else ".csv"
+            filepath = Path(tempfile.mktemp(suffix=suffix))
+            filepath.write_text(body["content"], encoding="utf-8")
+            name = body.get("name", "")
+            raw_mappings = body.get("mappings", [])
+        else:
+            fields, files = parse_multipart(self)
+            if "file" not in files:
+                json_response(self, 400, {"error": "No file provided"})
+                return
+            fname, data = files["file"]
+            filepath = save_temp_file(fname, data)
+            name = fields.get("name", "")
+            raw_mappings = json.loads(fields.get("mappings", "[]"))
 
         try:
             fmaps = [

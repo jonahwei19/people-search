@@ -755,11 +755,30 @@ fi.onchange = () => { if(fi.files.length) handleFile(fi.files[0]); };
 
 async function handleFile(f) {
   file = f;
+  fileContent = null;
   document.getElementById('dsName').value = f.name.replace(/\.(csv|json|jsonl)$/i, '');
-  showLoading('Detecting schema...');
-  const fd = new FormData(); fd.append('file', f);
+  showLoading('Reading file...');
+
+  // Read file client-side to handle large files (Vercel has 4.5MB upload limit)
   try {
-    const r = await apiFetch('/api/detect_schema', {method:'POST', body:fd});
+    fileContent = await f.text();
+  } catch(e) { hideLoading(); alert('Could not read file'); return; }
+
+  // For schema detection, only send a sample (first 20 rows)
+  var sample = fileContent;
+  if (f.name.endsWith('.csv')) {
+    var lines = fileContent.split('\n');
+    sample = lines.slice(0, 21).join('\n'); // header + 20 rows
+  }
+
+  showLoading('Detecting schema...');
+  try {
+    // Send sample as JSON instead of FormData to avoid size limits
+    const r = await apiFetch('/api/detect_schema', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({filename: f.name, content: sample}),
+    });
     const d = await r.json();
     hideLoading();
     if (d.error) { alert(d.error); return; }
@@ -768,7 +787,7 @@ async function handleFile(f) {
     dz.style.display = 'none';
     goStep(1);
     renderSchema(mappings);
-  } catch(e) { hideLoading(); }
+  } catch(e) { hideLoading(); alert('Schema detection failed: ' + e.message); }
 }
 
 // ── Steps ──
@@ -863,12 +882,18 @@ function renderSchema(maps) {
 // ── Confirm schema → cost ──
 async function confirmSchema() {
   showLoading('Preparing dataset...');
-  const fd = new FormData();
-  fd.append('file', file);
-  fd.append('mappings', JSON.stringify(mappings));
-  fd.append('name', document.getElementById('dsName').value);
   try {
-    const r = await apiFetch('/api/prepare', {method:'POST', body:fd});
+    // Send file content as JSON to bypass Vercel 4.5MB upload limit
+    const r = await apiFetch('/api/prepare', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        filename: file.name,
+        content: fileContent,
+        mappings: mappings,
+        name: document.getElementById('dsName').value,
+      }),
+    });
     const d = await r.json();
     hideLoading();
     if (d.error) { alert(d.error); return; }
