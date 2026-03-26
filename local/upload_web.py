@@ -928,9 +928,62 @@ function showProfile(idx) {
     html += '</div></div>';
   }
 
+  // LinkedIn correction UI
+  html += `<div class="modal-section" style="border-top:1px solid var(--border);padding-top:12px;margin-top:12px;">`;
+  if (p.linkedin_url) {
+    html += `<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+      <span style="font-size:12px;color:var(--text2);">LinkedIn: <a href="${p.linkedin_url}" target="_blank">${p.linkedin_url.split('/in/')[1] || p.linkedin_url}</a></span>
+      <button class="btn btn-ghost" style="font-size:11px;color:var(--red);padding:2px 8px;" onclick="markWrongLinkedin('${p.id}')">Wrong LinkedIn</button>
+    </div>`;
+  }
+  html += `<div id="linkedin-edit-${p.id}" style="${p.linkedin_url ? 'display:none;' : ''}">
+    <div style="display:flex;gap:6px;align-items:center;">
+      <input type="text" id="linkedin-input-${p.id}" placeholder="Paste LinkedIn URL..." style="flex:1;padding:6px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px;">
+      <button class="btn btn-primary" style="font-size:11px;padding:4px 10px;" onclick="setLinkedin('${p.id}')">Set LinkedIn</button>
+    </div>
+  </div>`;
+  html += `</div>`;
+
   html += `<div class="btn-group"><button class="btn btn-ghost" onclick="closeModal()">Close</button></div>`;
   document.getElementById('modalContent').innerHTML = html;
   document.getElementById('profileModal').classList.add('open');
+}
+
+async function markWrongLinkedin(profileId) {
+  if (!confirm('Mark this LinkedIn as wrong? It will be cleared.')) return;
+  const r = await fetch('/api/profile/' + profileId + '/linkedin', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({linkedin_url: ''})
+  });
+  const d = await r.json();
+  if (d.error) { alert(d.error); return; }
+  // Show the input field
+  document.getElementById('linkedin-edit-' + profileId).style.display = '';
+  // Remove the wrong link display
+  const btn = event.target;
+  btn.parentElement.innerHTML = '<span style="font-size:12px;color:var(--amber);">LinkedIn cleared. Enter correct URL below.</span>';
+}
+
+async function setLinkedin(profileId) {
+  const input = document.getElementById('linkedin-input-' + profileId);
+  const url = input.value.trim();
+  if (!url || !url.includes('linkedin.com/in/')) {
+    alert('Please paste a valid LinkedIn URL (must contain linkedin.com/in/)');
+    return;
+  }
+  input.disabled = true;
+  const r = await fetch('/api/profile/' + profileId + '/linkedin', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({linkedin_url: url})
+  });
+  const d = await r.json();
+  input.disabled = false;
+  if (d.error) { alert(d.error); return; }
+  // Refresh the profile modal
+  if (d.profile) {
+    window._dsProfiles = [d.profile];
+    showProfile(0);
+  }
 }
 
 function closeModal() { document.getElementById('profileModal').classList.remove('open'); }
@@ -1684,6 +1737,63 @@ def api_profile(profile_id):
                 d["_dataset_name"] = ds_info["name"]
                 d["_dataset_id"] = ds_info["id"]
                 return jsonify(d)
+    return jsonify({"error": "Profile not found"}), 404
+
+
+@app.route("/api/profile/<profile_id>/linkedin", methods=["POST"])
+def api_profile_linkedin(profile_id):
+    """Update a profile's LinkedIn URL. Optionally re-enriches."""
+    data = request.json or {}
+    new_url = data.get("linkedin_url", "").strip()
+
+    # Find the profile and its dataset
+    for ds_info in PIPELINE.list_datasets():
+        ds = PIPELINE.load(ds_info["id"])
+        for p in ds.profiles:
+            if p.id == profile_id:
+                if not new_url:
+                    # Clear LinkedIn
+                    p.linkedin_url = ""
+                    p.linkedin_enriched = {}
+                    p.enrichment_status = EnrichmentStatus.FAILED
+                    p.enrichment_log.append("LinkedIn manually cleared by user")
+                    p.profile_card = ""
+                    p.build_raw_text()
+                    PIPELINE.save(ds)
+                    return jsonify({"status": "cleared"})
+
+                # Set new URL and re-enrich
+                p.linkedin_url = new_url
+                p.enrichment_log.append(f"LinkedIn manually set to: {new_url}")
+
+                # Enrich via EnrichLayer (skip verification — user provided this URL)
+                from enrichment.enrichers import normalize_linkedin_url
+                url = normalize_linkedin_url(new_url)
+                api_data = PIPELINE.enricher._call_api(url)
+
+                if api_data and api_data != "OUT_OF_CREDITS":
+                    parsed = PIPELINE.enricher._parse_response(api_data)
+                    p.linkedin_enriched = parsed
+                    p.enrichment_status = EnrichmentStatus.ENRICHED
+                    exp_count = len(parsed.get("experience", []))
+                    p.enrichment_log.append(f"LinkedIn enriched (manual): {exp_count} experiences, {parsed.get('headline', '')}")
+
+                    # Backfill identity fields
+                    if not p.name and parsed.get("full_name"):
+                        p.name = parsed["full_name"]
+                    if not p.organization and parsed.get("current_company"):
+                        p.organization = parsed["current_company"]
+                    if not p.title and parsed.get("current_title"):
+                        p.title = parsed["current_title"]
+                else:
+                    p.enrichment_log.append("LinkedIn URL set but EnrichLayer returned no data")
+                    p.enrichment_status = EnrichmentStatus.ENRICHED  # URL is correct, just no data
+
+                # Rebuild profile card
+                p.build_raw_text()
+                PIPELINE.save(ds)
+                return jsonify({"status": "enriched", "profile": p.to_dict()})
+
     return jsonify({"error": "Profile not found"}), 404
 
 

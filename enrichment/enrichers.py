@@ -233,6 +233,31 @@ class LinkedInEnricher:
                 score -= 3
                 log.append(f"  Verify thin profile: PENALTY (only {exp_count} experiences, no headline, but person has rich content)")
 
+        # Content-relevance check: if the profile has substantial content
+        # (pitch, bio, notes), check if the enriched LinkedIn has ANY overlap
+        # with key terms from that content. A boilermaker LinkedIn for a
+        # biosecurity pitcher is a red flag.
+        content_text = " ".join(v for v in profile.content_fields.values() if v).lower()
+        if len(content_text) > 200:
+            enriched_text = (enriched.get("context_block") or "").lower()
+            if enriched_text:
+                checks += 1
+                # Extract key terms from content (5+ char words, not stopwords)
+                import re as _re
+                content_words = set(_re.findall(r'\b[a-z]{5,}\b', content_text))
+                enriched_words = set(_re.findall(r'\b[a-z]{5,}\b', enriched_text))
+                stop = {"about", "their", "these", "those", "would", "could", "should",
+                        "being", "other", "which", "through", "between", "before", "after"}
+                content_words -= stop
+                enriched_words -= stop
+                overlap = content_words & enriched_words
+                if len(overlap) >= 3:
+                    score += 2
+                    log.append(f"  Verify content relevance: MATCH ({len(overlap)} shared terms: {list(overlap)[:5]})")
+                elif len(overlap) == 0 and len(content_words) > 10:
+                    score -= 3
+                    log.append(f"  Verify content relevance: MISMATCH (zero overlap between content and LinkedIn)")
+
         # Decision: name must match, and if we have org/location to check,
         # at least one MUST confirm. Org mismatch + location mismatch = definite reject.
         if checks == 0 and score >= 2:

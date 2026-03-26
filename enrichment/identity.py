@@ -434,6 +434,19 @@ class IdentityResolver:
             all_candidates.extend(search(
                 f'"{first} {last}" "{ctx["email_domain"]}" site:linkedin.com/in', "name+email-domain"))
 
+        # ── Step 7b: Scrape org website for LinkedIn URLs ──
+        # Org websites often list team members with LinkedIn links
+        if ctx.get("email_domain") and first and last:
+            org_domain = ctx["email"].split("@")[-1] if ctx.get("email") else ""
+            if org_domain and org_domain not in PERSONAL_DOMAINS:
+                org_site_results = search(f'site:{org_domain} "{first} {last}"', "org-website")
+                if org_site_results:
+                    non_li = [r for r in org_site_results if "linkedin.com" not in r.get("url", "").lower()]
+                    if non_li:
+                        log.append(f"  Scraping org website ({org_domain}) for LinkedIn URLs...")
+                        org_evidence = _follow_email_evidence(non_li, name, log)
+                        all_candidates.extend(org_evidence)
+
         # ── Step 8: Name + org/keywords WITHOUT site:linkedin restriction ──
         # This catches pages that mention the person and link to their LinkedIn
         # (e.g., org websites, conference pages, articles)
@@ -594,12 +607,21 @@ class IdentityResolver:
             # Also check if name parts appear as substrings (handles "joshsiegle")
             if name_slug_hits == 0:
                 name_slug_hits = sum(1 for p in name_parts if len(p) >= 4 and p in slug_clean)
+            # Handle initial-based slugs: "nathan-l" for "Nathan Leonard"
+            if name_slug_hits <= 1 and first and last:
+                # Check if slug matches first + last_initial pattern
+                initial_slug = f"{first}{last[0]}" if last else ""
+                if initial_slug and initial_slug in slug_clean:
+                    name_slug_hits = 2
+                # Or first_initial + last pattern
+                initial_slug2 = f"{first[0]}{last}" if first else ""
+                if initial_slug2 and initial_slug2 in slug_clean:
+                    name_slug_hits = 2
             if name_slug_hits:
                 score += name_slug_hits * 2
                 reasons.append(f"slug-name({name_slug_hits})(+{name_slug_hits*2})")
-            # Penalize if slug doesn't contain the last name at all
-            # (catches cases like "joshsiegle" being matched to someone named "Josh Smith")
-            if last and len(last) >= 4 and last not in slug_clean:
+            # Penalize if slug doesn't contain the last name OR initial-based match
+            if last and len(last) >= 4 and last not in slug_clean and f"{first[0] if first else ''}{last[0]}" not in slug:
                 score -= 1
                 reasons.append("slug-no-last(-1)")
 
