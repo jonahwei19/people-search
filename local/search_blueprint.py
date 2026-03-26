@@ -228,6 +228,7 @@ def get_results(search_id):
             "reasoning": score.reasoning,
             "raw_text_preview": (p.raw_text[:400] if p else ""),
             "linkedin_url": (p.identity.linkedin_url if p else ""),
+            "email": (p.identity.email if p else ""),
         })
     return jsonify({"results": results, "excluded_count": excluded_count})
 
