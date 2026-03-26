@@ -24,9 +24,40 @@
   --radius: 10px;
   --shadow: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
 }
+[data-theme="dark"] {
+  --bg: #0f1117; --card: #1a1d27; --border: #2a2d3a;
+  --text: #e4e4e7; --text2: #a1a1aa; --text3: #71717a;
+  --accent: #3b82f6; --accent-light: #1e293b;
+  --green: #22c55e; --green-light: #14271f;
+  --amber: #f59e0b; --amber-light: #27200f;
+  --red: #ef4444; --red-light: #2a1215;
+  --shadow: 0 1px 3px rgba(0,0,0,0.3), 0 1px 2px rgba(0,0,0,0.2);
+}
+[data-theme="dark"] .sidebar { background: #0a0c12; }
+[data-theme="dark"] .sidebar-nav a:hover,
+[data-theme="dark"] .sidebar-nav a.active { background: #151820; }
+[data-theme="dark"] .modal { background: var(--card); }
+[data-theme="dark"] input, [data-theme="dark"] select, [data-theme="dark"] textarea {
+  background: var(--card); color: var(--text); border-color: var(--border);
+}
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif;
        background: var(--bg); color: var(--text); line-height: 1.55; font-size: 14px; }
+
+/* Login page */
+.login-page { display: flex; align-items: center; justify-content: center; min-height: 100vh;
+              background: #111827; }
+.login-card { background: var(--card); border-radius: 12px; padding: 40px; width: 380px;
+              box-shadow: 0 20px 60px rgba(0,0,0,0.3); }
+.login-card h1 { font-size: 22px; margin-bottom: 4px; }
+.login-card .subtitle { color: var(--text2); font-size: 13px; margin-bottom: 24px; }
+.login-card label { font-size: 12px; font-weight: 600; color: var(--text2); display: block;
+                    margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
+.login-card input { width: 100%; padding: 10px 12px; border: 1px solid var(--border);
+                    border-radius: 6px; font-size: 14px; margin-bottom: 16px; }
+.login-card input:focus { border-color: var(--accent); outline: none;
+                          box-shadow: 0 0 0 2px var(--accent-light); }
+.login-error { color: var(--red); font-size: 13px; margin-bottom: 12px; display: none; }
 
 /* Layout */
 .shell { display: flex; min-height: 100vh; }
@@ -42,6 +73,14 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans
 .sidebar-nav a:hover { color: #fff; background: #1f2937; }
 .sidebar-nav a.active { color: #fff; background: #1f2937; border-right: 2px solid #60a5fa; }
 .sidebar-nav a svg { width: 18px; height: 18px; opacity: 0.7; }
+
+/* Account indicator in sidebar */
+.sidebar-account { padding: 12px 20px; border-top: 1px solid #1f2937; display: flex;
+                   align-items: center; justify-content: space-between; }
+.sidebar-account-name { font-size: 12px; font-weight: 600; color: #e5e7eb; }
+.sidebar-account-logout { font-size: 11px; color: #6b7280; cursor: pointer;
+                          text-decoration: none; }
+.sidebar-account-logout:hover { color: #ef4444; }
 
 .main { flex: 1; padding: 32px 40px; max-width: 960px; }
 .main h1 { font-size: 22px; font-weight: 600; margin-bottom: 4px; letter-spacing: -0.3px; }
@@ -198,29 +237,46 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans
 .modal-section p { font-size: 13px; line-height: 1.6; color: var(--text); }
 .modal-close { position: absolute; top: 16px; right: 16px; background: none; border: none;
                font-size: 20px; cursor: pointer; color: var(--text3); }
+
+/* Loading overlay for cold starts */
+.loading-overlay { position: fixed; inset: 0; background: rgba(255,255,255,0.85); z-index: 200;
+                   display: none; align-items: center; justify-content: center;
+                   flex-direction: column; gap: 12px; }
+.loading-overlay.active { display: flex; }
+.loading-spinner { width: 32px; height: 32px; border: 3px solid var(--border);
+                   border-top-color: var(--accent); border-radius: 50%;
+                   animation: spin 0.8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.loading-text { font-size: 13px; color: var(--text2); }
 </style>
 </head>
 <body>
+<script>
+// MODE: set by the server. 'local' = no auth needed. 'cloud' = login required.
+window.APP_MODE = 'cloud';
+</script>
+<button id="theme-toggle" style="position:fixed;top:12px;right:16px;background:var(--card);border:1px solid var(--border);border-radius:8px;padding:6px 10px;cursor:pointer;font-size:12px;font-weight:500;color:var(--text2);z-index:9999;box-shadow:var(--shadow);">Dark</button>
 
-<!-- Login overlay -->
-<div id="login-overlay" style="display:none; position:fixed; inset:0; background:#f8fafc; z-index:9999; align-items:center; justify-content:center;">
-  <div style="background:#fff; border:1px solid #e2e8f0; border-radius:12px; padding:40px; width:380px; box-shadow:0 4px 12px rgba(0,0,0,0.08);">
-    <h2 style="font-size:20px; margin-bottom:4px; text-align:center;">People Search</h2>
-    <p style="color:#64748b; text-align:center; margin-bottom:24px; font-size:14px;">Sign in to your account</p>
-    <div style="margin-bottom:16px;">
-      <label style="display:block; font-size:13px; font-weight:500; margin-bottom:4px;">Account name</label>
-      <input id="login-name" type="text" style="width:100%; padding:8px 12px; border:1px solid #d1d5db; border-radius:6px; font-size:14px;" onkeydown="if(event.key==='Enter')doLogin()">
+<!-- ═══ LOGIN PAGE ═══ -->
+<div id="login-page" class="login-page">
+  <div class="login-card">
+    <h1>People <span style="color:var(--accent);">Search</span></h1>
+    <div class="subtitle">Sign in to your account</div>
+    <div class="login-error" id="login-error"></div>
+    <label>Account name</label>
+    <input type="text" id="login-name" placeholder="e.g. BlueDot" autofocus
+           onkeydown="if(event.key==='Enter')document.getElementById('login-password').focus()">
+    <label>Password</label>
+    <input type="password" id="login-password" placeholder="Password"
+           onkeydown="if(event.key==='Enter')doLogin()">
+    <div class="btn-group" style="margin-top:8px;">
+      <button class="btn btn-primary" style="width:100%;justify-content:center;" onclick="doLogin()">Sign in</button>
     </div>
-    <div style="margin-bottom:20px;">
-      <label style="display:block; font-size:13px; font-weight:500; margin-bottom:4px;">Password</label>
-      <input id="login-password" type="password" style="width:100%; padding:8px 12px; border:1px solid #d1d5db; border-radius:6px; font-size:14px;" onkeydown="if(event.key==='Enter')doLogin()">
-    </div>
-    <button onclick="doLogin()" style="width:100%; padding:10px; background:#2563eb; color:#fff; border:none; border-radius:6px; font-size:14px; font-weight:500; cursor:pointer;">Sign in</button>
-    <p id="login-error" style="color:#dc2626; font-size:13px; margin-top:8px; text-align:center;"></p>
   </div>
 </div>
 
-<div class="shell">
+<!-- ═══ MAIN APP (hidden until authenticated) ═══ -->
+<div class="shell" id="app-shell" style="display:none;">
   <nav class="sidebar">
     <div class="sidebar-brand">People <span>Search</span></div>
     <div class="sidebar-nav">
@@ -241,8 +297,12 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans
         Settings
       </a>
     </div>
-    <div style="padding:12px 20px;border-top:1px solid #1f2937;font-size:11px;color:#6b7280;line-height:1.4;">
-      Runs entirely on your machine. Your data never leaves your computer except for API calls you approve.
+    <!-- Account indicator -->
+    <div class="sidebar-account" id="sidebar-account">
+      <div class="sidebar-account-name" id="account-name-display"></div>
+      <a class="sidebar-account-logout" onclick="doLogout()" id="sidebar-logout">Sign out</a>
+    </div>
+    <div style="padding:12px 20px;border-top:1px solid #1f2937;font-size:11px;color:#6b7280;line-height:1.4;" id="sidebar-privacy">
     </div>
   </nav>
 
@@ -279,9 +339,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans
             <label>Dataset name</label>
             <input id="dsName" placeholder="e.g. Q1 Advisory Candidates">
           </div>
-
           <div id="schemaGroups"></div>
-
           <div class="btn-group">
             <button class="btn btn-primary" onclick="confirmSchema()">Continue</button>
             <button class="btn btn-ghost" onclick="resetUpload()">Cancel</button>
@@ -292,10 +350,8 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans
         <div class="card fade-in" id="step2" style="display:none;">
           <div class="card-header">Enrichment estimate</div>
           <div class="card-sub">What we found in your data and what enrichment will cost.</div>
-
           <div class="stats" id="costStats"></div>
           <div class="cost-card" id="costDetail"></div>
-
           <div class="btn-group">
             <button class="btn btn-primary" onclick="startEnrich()">Start enrichment</button>
             <button class="btn btn-ghost" onclick="skipEnrich()">Skip enrichment</button>
@@ -378,7 +434,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans
         <div class="card" style="margin-top:16px;">
           <div style="display:flex;align-items:center;gap:6px;">
             <div class="card-header" style="margin-bottom:0;">Global Rules</div>
-            <span style="display:inline-block;width:15px;height:15px;border-radius:50%;background:var(--border);text-align:center;font-size:10px;line-height:15px;color:var(--text2);cursor:help;" title="Global rules apply to EVERY search. They encode institutional knowledge — like what 'Republican' means for vetting. Format: 'When [condition], [rule].'">i</span>
+            <span style="display:inline-block;width:15px;height:15px;border-radius:50%;background:var(--border);text-align:center;font-size:10px;line-height:15px;color:var(--text2);cursor:help;" title="Global rules apply to EVERY search. They encode institutional knowledge. Format: 'When [condition], [rule].'">i</span>
           </div>
           <div class="card-sub">Apply across all searches. Format: "When [condition], [rule]."</div>
           <div id="global-rules-list" style="margin-bottom:10px;"></div>
@@ -409,9 +465,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans
 
         <!-- Chat interface -->
         <div class="card" style="padding:0;overflow:hidden;">
-          <div id="search-chat" style="max-height:400px;overflow-y:auto;padding:16px;">
-            <!-- Messages appear here -->
-          </div>
+          <div id="search-chat" style="max-height:400px;overflow-y:auto;padding:16px;"></div>
           <div style="border-top:1px solid var(--border);padding:12px;display:flex;gap:8px;">
             <textarea id="search-chat-input" placeholder="Describe who you're looking for..." style="flex:1;padding:10px;border:1px solid var(--border);border-radius:6px;font-size:14px;min-height:44px;max-height:120px;resize:vertical;" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();searchChatSend()}"></textarea>
             <button class="btn primary" onclick="searchChatSend()" id="search-chat-btn" style="align-self:flex-end;">Send</button>
@@ -432,7 +486,8 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans
       <div id="search-results" style="display:none;">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
           <div style="font-size:13px;color:var(--text2);" id="search-results-header"></div>
-          <div style="display:flex;gap:8px;">
+          <div style="display:flex;gap:8px;align-items:center;">
+            <select id="search-dataset-results" style="padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12px;" onchange="searchRerun()"><option value="">All datasets</option></select>
             <button class="btn" onclick="searchRerun()" id="btn-rerun">Re-run with feedback</button>
             <button class="btn" onclick="searchBackToPicker()">Back</button>
           </div>
@@ -456,42 +511,89 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans
     <!-- ═══ SETTINGS PAGE ═══ -->
     <div class="page" id="page-settings">
       <h1>Settings</h1>
-      <p class="page-desc">API keys are saved locally and never sent anywhere except the services listed below.</p>
+      <p class="page-desc">API keys and integrations for your account.</p>
 
       <div class="card">
         <div class="card-header">API Keys</div>
-        <div class="card-sub">These enable enrichment features. All are optional — the app works without them, but enrichment will be limited.</div>
-
+        <div class="card-sub">Stored securely in your account. These enable enrichment and search features.</div>
         <div id="keyFields"></div>
-
         <div class="btn-group">
           <button class="btn btn-primary" onclick="saveKeys()">Save</button>
           <span id="keySaveStatus" style="font-size:12px;color:var(--green);align-self:center;"></span>
         </div>
       </div>
 
+      <!-- Airtable Connection -->
+      <div class="card">
+        <div class="card-header">Airtable Integration</div>
+        <div class="card-sub">Import profiles from an Airtable base. Optionally push enrichment results back.</div>
+
+        <div style="margin-bottom:14px;">
+          <label style="font-size:12px;font-weight:600;color:var(--text2);display:block;margin-bottom:3px;">Airtable API Key</label>
+          <input id="at-api-key" type="password" placeholder="pat..."
+            style="width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;font-family:monospace;">
+          <div style="font-size:11px;color:var(--text3);margin-top:2px;">Personal access token from airtable.com/create/tokens</div>
+        </div>
+        <div style="display:flex;gap:12px;margin-bottom:14px;">
+          <div style="flex:1;">
+            <label style="font-size:12px;font-weight:600;color:var(--text2);display:block;margin-bottom:3px;">Base ID</label>
+            <input id="at-base-id" type="text" placeholder="app..."
+              style="width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;font-family:monospace;">
+          </div>
+          <div style="flex:1;">
+            <label style="font-size:12px;font-weight:600;color:var(--text2);display:block;margin-bottom:3px;">Table Name</label>
+            <input id="at-table-name" type="text" placeholder="Applicants"
+              style="width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;">
+          </div>
+        </div>
+        <div class="btn-group" style="margin-top:0;">
+          <button class="btn btn-primary" onclick="airtableConnect()" id="at-connect-btn">Connect</button>
+          <span id="at-status" style="font-size:12px;color:var(--text2);align-self:center;"></span>
+        </div>
+
+        <!-- Airtable preview (shown after connect) -->
+        <div id="at-preview" style="display:none;margin-top:16px;border-top:1px solid var(--border);padding-top:16px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+            <div style="font-size:13px;font-weight:600;" id="at-preview-header"></div>
+          </div>
+          <div id="at-schema-groups"></div>
+          <div class="name-field" style="margin-top:12px;">
+            <label>Dataset name</label>
+            <input id="at-ds-name" placeholder="e.g. Airtable Import">
+          </div>
+          <div class="btn-group">
+            <button class="btn btn-primary" onclick="airtableImport()">Import to People Search</button>
+            <button class="btn btn-ghost" onclick="document.getElementById('at-preview').style.display='none'">Cancel</button>
+          </div>
+        </div>
+      </div>
+
       <div class="card" style="background:#f8fafc;">
-        <div class="card-header" style="font-size:13px;">How this app uses your data</div>
+        <div class="card-header" style="font-size:13px;">How your data is handled</div>
         <div style="font-size:13px;color:var(--text2);line-height:1.7;">
-          <p style="margin-bottom:8px;"><strong>Everything runs locally on your machine.</strong> Your uploaded data is stored in a <code>datasets/</code> folder on disk as JSON files. Nothing is sent to any server unless you explicitly run enrichment.</p>
+          <p style="margin-bottom:8px;"><strong>Your data is stored securely in your account.</strong> Each account's data is isolated — other accounts cannot see your datasets, searches, or rules.</p>
           <p style="margin-bottom:8px;"><strong>When you enrich:</strong> Names and emails are sent to Brave Search to find LinkedIn profiles. LinkedIn URLs are sent to EnrichLayer to pull public profile data. That's it.</p>
-          <p style="margin-bottom:8px;"><strong>Suspicious?</strong> The code is fully inspectable. Ask Claude to explain what any file does, or read the source in <code>enrichment/</code>.</p>
+          <p style="margin-bottom:8px;"><strong>API keys:</strong> Stored per-account. Each organization provides their own keys — your usage and costs are yours alone.</p>
         </div>
       </div>
     </div>
   </div>
 </div>
 
+<!-- Loading overlay for cold starts -->
+<div class="loading-overlay" id="loading-overlay">
+  <div class="loading-spinner"></div>
+  <div class="loading-text" id="loading-text">Loading...</div>
+</div>
+
 <!-- Onboarding overlay (shown on first launch if keys missing) -->
 <div class="modal-bg" id="onboardingModal" style="display:none;">
   <div class="modal" style="max-width:540px;">
     <h2>Welcome to People Search</h2>
-    <div class="subtitle">Upload databases of people, enrich them, and search across them. Everything runs locally.</div>
+    <div class="subtitle">Upload databases of people, enrich them, and search across them.</div>
 
     <div style="background:#f8fafc;border-radius:8px;padding:16px;margin-bottom:20px;font-size:13px;color:var(--text2);line-height:1.6;">
-      Your data stays on your machine. The only external calls are to enrichment APIs (Brave Search, EnrichLayer) — and only when you click "Start enrichment."
-      <br><br>
-      Suspicious about what this code does? Ask Claude: <em>"explain what enrichment/pipeline.py does"</em>
+      Your data is stored securely in your account. The only external calls are to enrichment APIs (Brave Search, EnrichLayer) — and only when you click "Start enrichment."
     </div>
 
     <div style="font-size:13px;font-weight:600;margin-bottom:12px;">API keys <span style="color:var(--text3);font-weight:400;">(optional — you can add these later in Settings)</span></div>
@@ -510,6 +612,120 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans
 </div>
 
 <script>
+// ── Auth / Session ──
+let currentAccountName = '';
+
+function showLoading(text) {
+  document.getElementById('loading-text').textContent = text || 'Loading...';
+  document.getElementById('loading-overlay').classList.add('active');
+}
+function hideLoading() {
+  document.getElementById('loading-overlay').classList.remove('active');
+}
+
+// Wrapper for all API calls — handles loading state and session expiry
+async function apiFetch(url, opts) {
+  try {
+    const resp = await fetch(url, opts);
+    if (resp.status === 401 && window.APP_MODE !== 'local') {
+      // Session expired — redirect to login (cloud only)
+      document.getElementById('app-shell').style.display = 'none';
+      document.getElementById('login-page').style.display = 'flex';
+      document.getElementById('login-error').textContent = 'Session expired. Please sign in again.';
+      document.getElementById('login-error').style.display = 'block';
+      throw new Error('Session expired');
+    }
+    return resp;
+  } catch (e) {
+    if (e.message === 'Session expired') throw e;
+    // Network error — likely cold start timeout, retry once
+    console.warn('API fetch failed, retrying:', e.message);
+    return fetch(url, opts);
+  }
+}
+
+async function doLogin() {
+  const name = document.getElementById('login-name').value.trim();
+  const password = document.getElementById('login-password').value;
+  if (!name || !password) {
+    document.getElementById('login-error').textContent = 'Please enter both account name and password.';
+    document.getElementById('login-error').style.display = 'block';
+    return;
+  }
+
+  showLoading('Signing in...');
+  try {
+    const r = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({name, password}),
+    });
+    const d = await r.json();
+    hideLoading();
+
+    if (r.ok && d.ok) {
+      currentAccountName = d.account_name || name;
+      document.getElementById('login-page').style.display = 'none';
+      document.getElementById('app-shell').style.display = 'flex';
+      document.getElementById('account-name-display').textContent = currentAccountName;
+      document.getElementById('login-error').style.display = 'none';
+      initApp();
+    } else {
+      document.getElementById('login-error').textContent = d.error || 'Invalid account name or password.';
+      document.getElementById('login-error').style.display = 'block';
+    }
+  } catch (e) {
+    hideLoading();
+    document.getElementById('login-error').textContent = 'Could not connect to server. Please try again.';
+    document.getElementById('login-error').style.display = 'block';
+  }
+}
+
+async function doLogout() {
+  try { await fetch('/api/auth/logout', {method: 'POST'}); } catch(e) {}
+  document.getElementById('app-shell').style.display = 'none';
+  document.getElementById('login-page').style.display = 'flex';
+  document.getElementById('login-password').value = '';
+  document.getElementById('login-error').style.display = 'none';
+  currentAccountName = '';
+}
+
+// Check if we already have a valid session on page load
+async function checkSession() {
+  // Set mode-specific UI
+  if (window.APP_MODE === 'local') {
+    document.getElementById('sidebar-logout').style.display = 'none';
+    document.getElementById('sidebar-privacy').textContent = 'Runs entirely on your machine. Your data never leaves your computer except for API calls you approve.';
+  } else {
+    document.getElementById('sidebar-privacy').textContent = 'Your data is stored securely in your account. External API calls only happen when you run enrichment.';
+  }
+
+  if (window.APP_MODE === 'local') {
+    // No auth in local mode — go straight to app
+    document.getElementById('login-page').style.display = 'none';
+    document.getElementById('app-shell').style.display = 'flex';
+    document.getElementById('account-name-display').textContent = 'Local';
+    initApp();
+    return;
+  }
+  try {
+    showLoading('Checking session...');
+    const r = await fetch('/api/auth/session');
+    const d = await r.json();
+    hideLoading();
+    if (r.ok && d.authenticated) {
+      currentAccountName = d.account_name || '';
+      document.getElementById('login-page').style.display = 'none';
+      document.getElementById('app-shell').style.display = 'flex';
+      document.getElementById('account-name-display').textContent = currentAccountName;
+      initApp();
+    }
+  } catch (e) {
+    hideLoading();
+    // No session — stay on login page
+  }
+}
+
 // ── State ──
 let file = null, mappings = null, datasetId = null;
 
@@ -535,15 +751,19 @@ fi.onchange = () => { if(fi.files.length) handleFile(fi.files[0]); };
 async function handleFile(f) {
   file = f;
   document.getElementById('dsName').value = f.name.replace(/\.(csv|json|jsonl)$/i, '');
+  showLoading('Detecting schema...');
   const fd = new FormData(); fd.append('file', f);
-  const r = await fetch('/api/detect_schema', {method:'POST', body:fd});
-  const d = await r.json();
-  if (d.error) { alert(d.error); return; }
-  mappings = d.mappings;
-  document.getElementById('uploadFlow').style.display = 'block';
-  dz.style.display = 'none';
-  goStep(1);
-  renderSchema(mappings);
+  try {
+    const r = await apiFetch('/api/detect-schema', {method:'POST', body:fd});
+    const d = await r.json();
+    hideLoading();
+    if (d.error) { alert(d.error); return; }
+    mappings = d.mappings;
+    document.getElementById('uploadFlow').style.display = 'block';
+    dz.style.display = 'none';
+    goStep(1);
+    renderSchema(mappings);
+  } catch(e) { hideLoading(); }
 }
 
 // ── Steps ──
@@ -593,7 +813,6 @@ function renderSchema(maps) {
   let html = '';
   for (const [key, g] of Object.entries(groups)) {
     if (!g.items.length) continue;
-    // For metadata: separate empty fields and collapse them
     let mainItems = g.items;
     let emptyItems = [];
     if (key === 'metadata') {
@@ -618,7 +837,7 @@ function renderSchema(maps) {
       </div>`;
     }
     if (emptyItems.length) {
-      html += `<div style="padding:6px 12px;font-size:12px;color:var(--text3);cursor:pointer;" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'block':'none';this.textContent=this.nextElementSibling.style.display==='none'?'Show ${emptyItems.length} empty fields...':'Hide empty fields'"">Show ${emptyItems.length} empty fields...</div>`;
+      html += `<div style="padding:6px 12px;font-size:12px;color:var(--text3);cursor:pointer;" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'block':'none';this.textContent=this.nextElementSibling.style.display==='none'?'Show ${emptyItems.length} empty fields...':'Hide empty fields'">Show ${emptyItems.length} empty fields...</div>`;
       html += `<div style="display:none;">`;
       for (const item of emptyItems) {
         html += `<div class="schema-row" style="opacity:0.5;">
@@ -638,123 +857,74 @@ function renderSchema(maps) {
 
 // ── Confirm schema → cost ──
 async function confirmSchema() {
+  showLoading('Preparing dataset...');
   const fd = new FormData();
   fd.append('file', file);
   fd.append('mappings', JSON.stringify(mappings));
   fd.append('name', document.getElementById('dsName').value);
-  const r = await fetch('/api/prepare', {method:'POST', body:fd});
-  const d = await r.json();
-  if (d.error) { alert(d.error); return; }
-  datasetId = d.dataset_id;
+  try {
+    const r = await apiFetch('/api/prepare', {method:'POST', body:fd});
+    const d = await r.json();
+    hideLoading();
+    if (d.error) { alert(d.error); return; }
+    datasetId = d.dataset_id;
 
-  // Stats
-  const s = d.stats;
-  let statsHtml = `
-    <div class="stat"><div class="stat-val">${s.total}</div><div class="stat-label">Profiles</div></div>
-    <div class="stat"><div class="stat-val">${s.have_linkedin}</div><div class="stat-label">Have LinkedIn</div></div>
-    <div class="stat"><div class="stat-val">${s.email_only}</div><div class="stat-label">Email only</div></div>
-    <div class="stat"><div class="stat-val">${s.content_fields}</div><div class="stat-label">Content fields</div></div>
-  `;
-  if (s.skipped_rows > 0) {
-    statsHtml += `<div class="stat"><div class="stat-val" style="color:var(--text3)">${s.skipped_rows}</div><div class="stat-label">Rows skipped (empty)</div></div>`;
-  }
-  document.getElementById('costStats').innerHTML = statsHtml;
+    const s = d.stats;
+    let statsHtml = `
+      <div class="stat"><div class="stat-val">${s.total}</div><div class="stat-label">Profiles</div></div>
+      <div class="stat"><div class="stat-val">${s.have_linkedin}</div><div class="stat-label">Have LinkedIn</div></div>
+      <div class="stat"><div class="stat-val">${s.email_only}</div><div class="stat-label">Email only</div></div>
+      <div class="stat"><div class="stat-val">${s.content_fields}</div><div class="stat-label">Content fields</div></div>
+    `;
+    if (s.skipped_rows > 0) {
+      statsHtml += `<div class="stat"><div class="stat-val" style="color:var(--text3)">${s.skipped_rows}</div><div class="stat-label">Rows skipped (empty)</div></div>`;
+    }
+    document.getElementById('costStats').innerHTML = statsHtml;
 
-  // Cost detail
-  const c = d.cost;
-  let costHtml = '';
-  if (c.linkedin_enrichments) {
-    costHtml += `<div class="cost-line"><span>LinkedIn enrichment (${c.linkedin_enrichments} profiles &times; $${c.linkedin_cost_per.toFixed(3)})</span><span>$${c.linkedin_total.toFixed(2)}</span></div>`;
-  }
-  if (c.identity_lookups) {
-    costHtml += `<div class="cost-line"><span>Email &rarr; LinkedIn lookup (${c.identity_lookups} &times; $${c.identity_cost_per.toFixed(4)})</span><span>$${c.identity_total.toFixed(2)}</span></div>`;
-  }
-  costHtml += `<div class="cost-line"><span>Profile card generation (${c.embedding_profiles} profiles)</span><span>Free</span></div>`;
-  costHtml += `<div class="cost-line cost-total"><span>Estimated total</span><span>$${c.total_cost.toFixed(2)}</span></div>`;
-  if (c.total_cost > 10) costHtml += `<div class="cost-warn">Significant cost. Consider testing with a smaller sample first.</div>`;
-  if (c.total_cost === 0 && c.linkedin_enrichments === 0 && c.identity_lookups === 0) {
-    costHtml += `<div style="margin-top:8px;font-size:12px;color:var(--amber);">No LinkedIn URLs or emails found to enrich. Click "Skip enrichment" to build profile cards from the content fields you have.</div>`;
-  }
-
-  // Content fields info
-  if (s.content_field_names && s.content_field_names.length) {
-    costHtml += `<div style="margin-top:12px;font-size:12px;color:var(--text2);">Content fields: <strong>${s.content_field_names.join(', ')}</strong> &mdash; will be summarized into profile cards for LLM scoring.</div>`;
-  }
-  if (s.duplicates && s.duplicates > 0) {
-    costHtml += `<div class="cost-warn">${s.duplicates} profile${s.duplicates>1?'s':''} already exist in other datasets. They will be included but won't be re-enriched.</div>`;
-  }
-
-  document.getElementById('costDetail').innerHTML = costHtml;
-  goStep(2);
+    const c = d.cost;
+    let costHtml = '';
+    if (c.linkedin_enrichments) {
+      costHtml += `<div class="cost-line"><span>LinkedIn enrichment (${c.linkedin_enrichments} profiles &times; $${c.linkedin_cost_per.toFixed(3)})</span><span>$${c.linkedin_total.toFixed(2)}</span></div>`;
+    }
+    if (c.identity_lookups) {
+      costHtml += `<div class="cost-line"><span>Email &rarr; LinkedIn lookup (${c.identity_lookups} &times; $${c.identity_cost_per.toFixed(4)})</span><span>$${c.identity_total.toFixed(2)}</span></div>`;
+    }
+    costHtml += `<div class="cost-line"><span>Profile card generation (${c.embedding_profiles} profiles)</span><span>Free</span></div>`;
+    costHtml += `<div class="cost-line cost-total"><span>Estimated total</span><span>$${c.total_cost.toFixed(2)}</span></div>`;
+    if (c.total_cost > 10) costHtml += `<div class="cost-warn">Significant cost. Consider testing with a smaller sample first.</div>`;
+    if (c.total_cost === 0 && c.linkedin_enrichments === 0 && c.identity_lookups === 0) {
+      costHtml += `<div style="margin-top:8px;font-size:12px;color:var(--amber);">No LinkedIn URLs or emails found to enrich. Click "Skip enrichment" to build profile cards from the content fields you have.</div>`;
+    }
+    if (s.content_field_names && s.content_field_names.length) {
+      costHtml += `<div style="margin-top:12px;font-size:12px;color:var(--text2);">Content fields: <strong>${s.content_field_names.join(', ')}</strong> &mdash; will be summarized into profile cards for LLM scoring.</div>`;
+    }
+    if (s.duplicates && s.duplicates > 0) {
+      costHtml += `<div class="cost-warn">${s.duplicates} profile${s.duplicates>1?'s':''} already exist in other datasets. They will be included but won't be re-enriched.</div>`;
+    }
+    document.getElementById('costDetail').innerHTML = costHtml;
+    goStep(2);
+  } catch(e) { hideLoading(); }
 }
 
-// ── Enrichment (chunked for serverless) ──
+// ── Enrichment ──
 async function startEnrich() {
   goStep(3);
-  await runChunkedEnrich('/api/enrich', {dataset_id: datasetId});
-}
-
-async function runChunkedEnrich(endpoint, params) {
-  let jobId = null;
-  const token = Math.random().toString(36);
-  currentPollJobId = token;
-
-  const fill = document.getElementById('progressFill');
-  const pct = document.getElementById('progressPct');
-  const lbl = document.getElementById('progressLabel');
-  fill.style.width = '0%'; fill.style.background = 'var(--accent)';
-  pct.textContent = '0%'; lbl.textContent = 'Starting...';
-
-  while (currentPollJobId === token) {
-    try {
-      const body = {...params};
-      if (jobId) body.job_id = jobId;
-      const r = await fetch(endpoint, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)});
-      const d = await r.json();
-      if (d.error) { lbl.textContent = 'Error: ' + d.error; fill.style.background = 'var(--red)'; return; }
-
-      jobId = d.job_id;
-      const p = Math.round((d.current / Math.max(d.total, 1)) * 100);
-      fill.style.width = p + '%'; pct.textContent = p + '%';
-      lbl.textContent = d.message || `Enriched ${d.current}/${d.total}`;
-
-      if (d.status === 'done') {
-        fill.style.width = '100%'; fill.style.background = 'var(--green)';
-        pct.textContent = '100%';
-        const jobResp = await fetch('/api/job/' + jobId);
-        const jobData = await jobResp.json();
-        const st = jobData.stats || {};
-        let doneHtml = '';
-        if (st.resolved) doneHtml += `<div class="stat"><div class="stat-val" style="color:var(--accent)">${st.resolved}</div><div class="stat-label">LinkedIn found</div></div>`;
-        doneHtml += `<div class="stat"><div class="stat-val" style="color:var(--green)">${st.enriched||d.current||0}</div><div class="stat-label">Enriched</div></div>`;
-        doneHtml += `<div class="stat"><div class="stat-val">${st.skipped||0}</div><div class="stat-label">Skipped</div></div>`;
-        if (st.failed) doneHtml += `<div class="stat"><div class="stat-val">${st.failed}</div><div class="stat-label">Failed</div></div>`;
-        document.getElementById('doneStats').innerHTML = doneHtml;
-        goStep(4);
-        loadDatasets();
-        return;
-      } else if (d.status === 'error') {
-        lbl.textContent = 'Error: ' + (d.message || 'Unknown');
-        fill.style.background = 'var(--red)';
-        return;
-      }
-    } catch(e) {
-      lbl.textContent = 'Network error, retrying...';
-    }
-    await new Promise(r => setTimeout(r, 300));
-  }
+  const r = await apiFetch('/api/enrich', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({dataset_id:datasetId})});
+  const d = await r.json();
+  if (d.error) { alert(d.error); return; }
+  currentPollJobId = d.job_id;
+  pollJob(d.job_id);
 }
 
 let currentPollJobId = null;
 
 async function cancelEnrich() {
   if (currentPollJobId) {
-    await fetch('/api/job/' + currentPollJobId + '/cancel', {method:'POST'});
+    await apiFetch('/api/job/' + currentPollJobId + '/cancel', {method:'POST'});
   }
   currentPollJobId = null;
-  // Delete the dataset so user can re-upload clean
   if (datasetId) {
-    await fetch('/api/dataset/' + datasetId, {method:'DELETE'});
+    await apiFetch('/api/dataset/' + datasetId, {method:'DELETE'});
   }
   resetUpload();
   loadDatasets();
@@ -763,101 +933,107 @@ async function cancelEnrich() {
 async function skipEnrich() {
   goStep(3);
   document.getElementById('progressLabel').textContent = 'Building profile cards (no enrichment)...';
-  document.getElementById('progressFill').style.width = '50%';
-  const r = await fetch('/api/embed_only', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({dataset_id:datasetId})});
+  const r = await apiFetch('/api/embed-only', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({dataset_id:datasetId})});
   const d = await r.json();
   if (d.error) { alert(d.error); return; }
-  document.getElementById('progressFill').style.width = '100%';
-  document.getElementById('progressFill').style.background = 'var(--green)';
-  document.getElementById('progressPct').textContent = '100%';
-  document.getElementById('doneStats').innerHTML = '<div class="stat"><div class="stat-val">0</div><div class="stat-label">Enriched</div></div><div class="stat"><div class="stat-val">&#10003;</div><div class="stat-label">Cards built</div></div>';
-  goStep(4);
-  loadDatasets();
+  currentPollJobId = d.job_id;
+  pollJob(d.job_id);
 }
 
 async function pollJob(jobId) {
   if (currentPollJobId !== jobId) return;
-  const r = await fetch('/api/job/' + jobId);
-  const d = await r.json();
-  const fill = document.getElementById('progressFill');
-  const pct = document.getElementById('progressPct');
-  const lbl = document.getElementById('progressLabel');
+  try {
+    const r = await apiFetch('/api/job/' + jobId);
+    const d = await r.json();
+    const fill = document.getElementById('progressFill');
+    const pct = document.getElementById('progressPct');
+    const lbl = document.getElementById('progressLabel');
 
-  if (d.status === 'running') {
-    const p = Math.round((d.current / Math.max(d.total,1)) * 100);
-    fill.style.width = p + '%'; pct.textContent = p + '%';
-    lbl.textContent = d.message || 'Enriching...';
-    setTimeout(() => pollJob(jobId), 800);
-  } else if (d.status === 'embedding') {
-    fill.style.width = '85%'; pct.textContent = '85%';
-    lbl.textContent = 'Building profile cards...';
-    setTimeout(() => pollJob(jobId), 1500);
-  } else if (d.status === 'done') {
-    fill.style.width = '100%'; fill.style.background = 'var(--green)';
-    const st = d.stats || {};
-    let doneHtml = '';
-    if (st.resolved) doneHtml += `<div class="stat"><div class="stat-val" style="color:var(--accent)">${st.resolved}</div><div class="stat-label">LinkedIn found</div></div>`;
-    doneHtml += `<div class="stat"><div class="stat-val" style="color:var(--green)">${st.enriched||0}</div><div class="stat-label">Enriched</div></div>`;
-    doneHtml += `<div class="stat"><div class="stat-val">${st.skipped||0}</div><div class="stat-label">Skipped</div></div>`;
-    if (st.failed || st.resolve_failed) doneHtml += `<div class="stat"><div class="stat-val">${(st.failed||0)+(st.resolve_failed||0)}</div><div class="stat-label">Failed</div></div>`;
-    doneHtml += `<div class="stat"><div class="stat-val">$${(st.total_cost||0).toFixed(2)}</div><div class="stat-label">Cost</div></div>`;
-    document.getElementById('doneStats').innerHTML = doneHtml;
-    goStep(4);
-  } else if (d.status === 'cancelled') {
-    return; // stop polling, UI already reset by cancelEnrich()
-  } else if (d.status === 'error') {
-    lbl.textContent = 'Error: ' + d.message;
-    fill.style.background = 'var(--red)';
+    if (d.status === 'running') {
+      const p = Math.round((d.current / Math.max(d.total,1)) * 100);
+      fill.style.width = p + '%'; pct.textContent = p + '%';
+      lbl.textContent = d.message || 'Enriching...';
+      setTimeout(() => pollJob(jobId), 800);
+    } else if (d.status === 'embedding') {
+      fill.style.width = '85%'; pct.textContent = '85%';
+      lbl.textContent = 'Building profile cards...';
+      setTimeout(() => pollJob(jobId), 1500);
+    } else if (d.status === 'done') {
+      fill.style.width = '100%'; fill.style.background = 'var(--green)';
+      const st = d.stats || {};
+      let doneHtml = '';
+      if (st.resolved) doneHtml += `<div class="stat"><div class="stat-val" style="color:var(--accent)">${st.resolved}</div><div class="stat-label">LinkedIn found</div></div>`;
+      doneHtml += `<div class="stat"><div class="stat-val" style="color:var(--green)">${st.enriched||0}</div><div class="stat-label">Enriched</div></div>`;
+      doneHtml += `<div class="stat"><div class="stat-val">${st.skipped||0}</div><div class="stat-label">Skipped</div></div>`;
+      if (st.failed || st.resolve_failed) doneHtml += `<div class="stat"><div class="stat-val">${(st.failed||0)+(st.resolve_failed||0)}</div><div class="stat-label">Failed</div></div>`;
+      doneHtml += `<div class="stat"><div class="stat-val">$${(st.total_cost||0).toFixed(2)}</div><div class="stat-label">Cost</div></div>`;
+      document.getElementById('doneStats').innerHTML = doneHtml;
+      goStep(4);
+    } else if (d.status === 'cancelled') {
+      return;
+    } else if (d.status === 'error') {
+      lbl.textContent = 'Error: ' + d.message;
+      fill.style.background = 'var(--red)';
+    }
+  } catch(e) {
+    // Retry on network error (cold start)
+    setTimeout(() => pollJob(jobId), 2000);
   }
 }
 
 // ── Datasets ──
 async function loadDatasets() {
-  const r = await fetch('/api/datasets');
-  const ds = await r.json();
-  const el = document.getElementById('dsList');
-  if (!ds.length) {
-    el.innerHTML = '<div class="empty"><div class="empty-icon">&#x1F4C1;</div>No datasets yet. Upload one to get started.</div>';
-    return;
-  }
-  el.innerHTML = ds.map(d => `
-    <div class="ds-card">
-      <div class="ds-icon" onclick="loadDatasetDetail('${d.id}')" style="cursor:pointer;">${(d.name||'?')[0].toUpperCase()}</div>
-      <div class="ds-info" onclick="loadDatasetDetail('${d.id}')" style="cursor:pointer;">
-        <div class="ds-name">${d.name}</div>
-        <div class="ds-meta">${d.profiles} profiles &middot; ${d.created_at ? new Date(d.created_at).toLocaleDateString() : ''}</div>
-        <div class="ds-fields">${(d.searchable_fields||[]).map(f=>'<span class="ds-field-tag">'+f+'</span>').join('')}</div>
+  try {
+    const r = await apiFetch('/api/datasets');
+    const ds = await r.json();
+    const el = document.getElementById('dsList');
+    if (!ds.length) {
+      el.innerHTML = '<div class="empty"><div class="empty-icon">&#x1F4C1;</div>No datasets yet. Upload one to get started.</div>';
+      return;
+    }
+    el.innerHTML = ds.map(d => `
+      <div class="ds-card">
+        <div class="ds-icon" onclick="loadDatasetDetail('${d.id}')" style="cursor:pointer;">${(d.name||'?')[0].toUpperCase()}</div>
+        <div class="ds-info" onclick="loadDatasetDetail('${d.id}')" style="cursor:pointer;">
+          <div class="ds-name">${d.name}</div>
+          <div class="ds-meta">${d.profiles} profiles &middot; ${d.created_at ? new Date(d.created_at).toLocaleDateString() : ''}</div>
+          <div class="ds-fields">${(d.searchable_fields||[]).map(f=>'<span class="ds-field-tag">'+f+'</span>').join('')}</div>
+        </div>
+        <div class="ds-actions">
+          <button class="btn btn-ghost" style="color:var(--red);font-size:12px;" onclick="event.stopPropagation();deleteDataset('${d.id}','${(d.name||'').replace(/'/g,"\\'")}')">Delete</button>
+        </div>
       </div>
-      <div class="ds-actions">
-        <button class="btn btn-ghost" style="color:var(--red);font-size:12px;" onclick="event.stopPropagation();deleteDataset('${d.id}','${(d.name||'').replace(/'/g,"\\'")}')">Delete</button>
-      </div>
-    </div>
-  `).join('');
+    `).join('');
+  } catch(e) {}
 }
 
 async function loadDatasetDetail(id) {
-  const r = await fetch('/api/dataset/' + id);
-  const d = await r.json();
-  if (d.error) { alert(d.error); return; }
+  showLoading('Loading dataset...');
+  try {
+    const r = await apiFetch('/api/dataset/' + id);
+    const d = await r.json();
+    hideLoading();
+    if (d.error) { alert(d.error); return; }
 
-  document.getElementById('detailName').textContent = d.name;
-  document.getElementById('detailMeta').textContent = `${d.profiles.length} profiles &middot; Source: ${d.source_file.split('/').pop()} &middot; ${new Date(d.created_at).toLocaleDateString()}`;
+    document.getElementById('detailName').textContent = d.name;
+    document.getElementById('detailMeta').textContent = `${d.profiles.length} profiles \u00b7 Source: ${d.source_file.split('/').pop()} \u00b7 ${new Date(d.created_at).toLocaleDateString()}`;
 
-  const enriched = d.profiles.filter(p=>p.enrichment_status==='enriched').length;
-  const pending = d.profiles.filter(p=>p.enrichment_status==='pending').length;
-  const hasContent = d.profiles.filter(p=>Object.keys(p.content_fields||{}).length>0).length;
-  window._dsDetailId = id;
-  document.getElementById('detailStats').innerHTML = `
-    <div class="stat"><div class="stat-val">${d.profiles.length}</div><div class="stat-label">Total</div></div>
-    <div class="stat"><div class="stat-val" style="color:var(--green)">${enriched}</div><div class="stat-label">Enriched</div></div>
-    <div class="stat"><div class="stat-val">${hasContent}</div><div class="stat-label">Have content</div></div>
-    <div class="stat"><div class="stat-val">${pending}</div><div class="stat-label">Pending</div></div>
-  `;
+    const enriched = d.profiles.filter(p=>p.enrichment_status==='enriched').length;
+    const pending = d.profiles.filter(p=>p.enrichment_status==='pending').length;
+    const hasContent = d.profiles.filter(p=>Object.keys(p.content_fields||{}).length>0).length;
+    window._dsDetailId = id;
+    document.getElementById('detailStats').innerHTML = `
+      <div class="stat"><div class="stat-val">${d.profiles.length}</div><div class="stat-label">Total</div></div>
+      <div class="stat"><div class="stat-val" style="color:var(--green)">${enriched}</div><div class="stat-label">Enriched</div></div>
+      <div class="stat"><div class="stat-val">${hasContent}</div><div class="stat-label">Have content</div></div>
+      <div class="stat"><div class="stat-val">${pending}</div><div class="stat-label">Pending</div></div>
+    `;
 
-  window._dsProfiles = d.profiles;
-  renderProfiles(d.profiles);
-  document.getElementById('profileCount').textContent = d.profiles.length + ' profiles';
-  showPage('ds-detail');
+    window._dsProfiles = d.profiles;
+    renderProfiles(d.profiles);
+    document.getElementById('profileCount').textContent = d.profiles.length + ' profiles';
+    showPage('ds-detail');
+  } catch(e) { hideLoading(); }
 }
 
 function renderProfiles(profiles, filter) {
@@ -907,7 +1083,6 @@ function showProfile(idx) {
   if (p.other_links && p.other_links.length) p.other_links.forEach(l => links.push('<a href="'+l+'" target="_blank">Link</a>'));
   html += `<div class="subtitle">${[p.title, p.organization].filter(Boolean).join(' at ')}${links.length ? ' &middot; ' + links.join(' &middot; ') : ''}</div>`;
 
-  // Enriched LinkedIn data
   const li = p.linkedin_enriched || {};
   if (li.headline) html += `<div class="modal-section"><h3>Headline</h3><p>${li.headline}</p></div>`;
   if (li.summary) html += `<div class="modal-section"><h3>About</h3><p>${li.summary}</p></div>`;
@@ -926,7 +1101,6 @@ function showProfile(idx) {
     html += '</div>';
   }
 
-  // Content fields
   const cf = p.content_fields || {};
   for (const [k, v] of Object.entries(cf)) {
     if (v && v.trim()) {
@@ -935,7 +1109,6 @@ function showProfile(idx) {
     }
   }
 
-  // Metadata
   const md = p.metadata || {};
   const mdEntries = Object.entries(md).filter(([k,v]) => v);
   if (mdEntries.length) {
@@ -947,7 +1120,6 @@ function showProfile(idx) {
     html += '</div>';
   }
 
-  // Enrichment log
   const elog = p.enrichment_log || [];
   if (elog.length) {
     html += `<div class="modal-section"><h3>Enrichment Log</h3><div style="font-family:monospace;font-size:11px;line-height:1.6;color:var(--text2);background:#f8f9fa;padding:10px;border-radius:6px;max-height:200px;overflow-y:auto;">`;
@@ -955,18 +1127,57 @@ function showProfile(idx) {
     html += '</div></div>';
   }
 
-  html += `<div class="btn-group"><button class="btn btn-ghost" onclick="closeModal()">Close</button></div>`;
+  // LinkedIn correction UI
+  html += '<div class="modal-section" style="border-top:1px solid var(--border);padding-top:12px;margin-top:12px;">';
+  if (p.linkedin_url) {
+    html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">' +
+      '<span style="font-size:12px;color:var(--text2);">LinkedIn: <a href="' + p.linkedin_url + '" target="_blank">' + (p.linkedin_url.split('/in/')[1] || p.linkedin_url) + '</a></span>' +
+      '<button class="btn btn-ghost" style="font-size:11px;color:var(--red);padding:2px 8px;" onclick="markWrongLinkedin(\'' + p.id + '\')">Wrong LinkedIn</button></div>';
+  }
+  html += '<div id="linkedin-edit-' + p.id + '" style="' + (p.linkedin_url ? 'display:none;' : '') + '">' +
+    '<div style="display:flex;gap:6px;align-items:center;">' +
+    '<input type="text" id="linkedin-input-' + p.id + '" placeholder="Paste LinkedIn URL..." style="flex:1;padding:6px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px;">' +
+    '<button class="btn btn-primary" style="font-size:11px;padding:4px 10px;" onclick="setLinkedin(\'' + p.id + '\')">Set LinkedIn</button></div></div>';
+  html += '</div>';
+
+  html += '<div class="btn-group"><button class="btn btn-ghost" onclick="closeModal()">Close</button></div>';
   document.getElementById('modalContent').innerHTML = html;
   document.getElementById('profileModal').classList.add('open');
+}
+
+async function markWrongLinkedin(profileId) {
+  if (!confirm('Mark this LinkedIn as wrong?')) return;
+  await apiFetch('/api/profile/' + profileId + '/linkedin', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({linkedin_url: ''})
+  });
+  document.getElementById('linkedin-edit-' + profileId).style.display = '';
+}
+
+async function setLinkedin(profileId) {
+  var input = document.getElementById('linkedin-input-' + profileId);
+  var url = input.value.trim();
+  if (!url || url.indexOf('linkedin.com/in/') < 0) {
+    alert('Please paste a valid LinkedIn URL'); return;
+  }
+  var btn = event.target;
+  btn.textContent = 'Enriching...'; btn.disabled = true; input.disabled = true;
+  try {
+    var r = await apiFetch('/api/profile/' + profileId + '/linkedin', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({linkedin_url: url})
+    });
+    var d = await r.json();
+    if (d.profile) { window._dsProfiles = [d.profile]; showProfile(0); }
+  } finally { btn.textContent = 'Set LinkedIn'; btn.disabled = false; input.disabled = false; }
 }
 
 function closeModal() { document.getElementById('profileModal').classList.remove('open'); }
 
 async function showSearchProfile(profileId) {
-  const r = await fetch('/api/profile/' + profileId);
+  const r = await apiFetch('/api/profile/' + profileId);
   const p = await r.json();
   if (p.error) { alert(p.error); return; }
-  // Reuse the same modal as the dataset profile viewer
   window._dsProfiles = [p];
   showProfile(0);
 }
@@ -974,9 +1185,8 @@ document.onkeydown = e => { if(e.key==='Escape') closeModal(); };
 
 async function deleteDataset(id, name) {
   if (!confirm(`Delete "${name}"? This cannot be undone.`)) return;
-  await fetch('/api/dataset/' + id, {method:'DELETE'});
+  await apiFetch('/api/dataset/' + id, {method:'DELETE'});
   loadDatasets();
-  // If we were viewing this dataset's detail, go back
   if (document.getElementById('page-ds-detail').classList.contains('active')) {
     showPage('datasets');
   }
@@ -989,37 +1199,37 @@ async function reenrichDataset(id) {
   datasetId = id;
   currentPollJobId = null;
 
-  // Fetch cost estimate and show step 2
-  const r = await fetch('/api/reenrich_estimate', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({dataset_id:id})});
-  const d = await r.json();
-  if (d.error) { alert(d.error); return; }
+  showLoading('Estimating cost...');
+  try {
+    const r = await apiFetch('/api/reenrich-estimate', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({dataset_id:id})});
+    const d = await r.json();
+    hideLoading();
+    if (d.error) { alert(d.error); return; }
 
-  const s = d.stats;
-  let statsHtml = `
-    <div class="stat"><div class="stat-val">${s.total}</div><div class="stat-label">Profiles</div></div>
-    <div class="stat"><div class="stat-val">${s.have_linkedin}</div><div class="stat-label">Have LinkedIn</div></div>
-    <div class="stat"><div class="stat-val">${s.email_only}</div><div class="stat-label">Email only</div></div>
-    <div class="stat"><div class="stat-val">${s.content_fields}</div><div class="stat-label">Content fields</div></div>
-  `;
-  document.getElementById('costStats').innerHTML = statsHtml;
+    const s = d.stats;
+    document.getElementById('costStats').innerHTML = `
+      <div class="stat"><div class="stat-val">${s.total}</div><div class="stat-label">Profiles</div></div>
+      <div class="stat"><div class="stat-val">${s.have_linkedin}</div><div class="stat-label">Have LinkedIn</div></div>
+      <div class="stat"><div class="stat-val">${s.email_only}</div><div class="stat-label">Email only</div></div>
+      <div class="stat"><div class="stat-val">${s.content_fields}</div><div class="stat-label">Content fields</div></div>
+    `;
 
-  const c = d.cost;
-  let costHtml = '';
-  costHtml += `<div class="cost-line"><span>Identity resolution (${c.identity_lookups} profiles &times; ~$${c.identity_cost_per.toFixed(3)}/lookup)</span><span>$${c.identity_total.toFixed(2)}</span></div>`;
-  costHtml += `<div class="cost-line"><span>LinkedIn enrichment (${c.linkedin_enrichments} profiles &times; $${c.linkedin_cost_per.toFixed(2)})</span><span>$${c.linkedin_total.toFixed(2)}</span></div>`;
-  costHtml += `<div class="cost-line"><span>Profile card generation</span><span>Free</span></div>`;
-  costHtml += `<div class="cost-line cost-total"><span>Estimated total</span><span>$${c.total_cost.toFixed(2)}</span></div>`;
-  if (c.total_cost > 10) costHtml += `<div class="cost-warn">Significant cost. Consider testing with a smaller sample first.</div>`;
-  if (s.content_field_names && s.content_field_names.length) {
-    costHtml += `<div style="margin-top:12px;font-size:12px;color:var(--text2);">Content fields: <strong>${s.content_field_names.join(', ')}</strong></div>`;
-  }
-  document.getElementById('costDetail').innerHTML = costHtml;
+    const c = d.cost;
+    let costHtml = '';
+    costHtml += `<div class="cost-line"><span>Identity resolution (${c.identity_lookups} profiles &times; ~$${c.identity_cost_per.toFixed(3)}/lookup)</span><span>$${c.identity_total.toFixed(2)}</span></div>`;
+    costHtml += `<div class="cost-line"><span>LinkedIn enrichment (${c.linkedin_enrichments} profiles &times; $${c.linkedin_cost_per.toFixed(2)})</span><span>$${c.linkedin_total.toFixed(2)}</span></div>`;
+    costHtml += `<div class="cost-line"><span>Profile card generation</span><span>Free</span></div>`;
+    costHtml += `<div class="cost-line cost-total"><span>Estimated total</span><span>$${c.total_cost.toFixed(2)}</span></div>`;
+    if (c.total_cost > 10) costHtml += `<div class="cost-warn">Significant cost. Consider testing with a smaller sample first.</div>`;
+    if (s.content_field_names && s.content_field_names.length) {
+      costHtml += `<div style="margin-top:12px;font-size:12px;color:var(--text2);">Content fields: <strong>${s.content_field_names.join(', ')}</strong></div>`;
+    }
+    document.getElementById('costDetail').innerHTML = costHtml;
 
-  // Override the enrich button to call reenrich instead of enrich
-  window._reenrichMode = true;
-  window._reenrichDatasetId = id;
-
-  goStep(2);
+    window._reenrichMode = true;
+    window._reenrichDatasetId = id;
+    goStep(2);
+  } catch(e) { hideLoading(); }
 }
 
 // Patch startEnrich to handle reenrich mode
@@ -1027,14 +1237,22 @@ const _origStartEnrich = startEnrich;
 startEnrich = async function() {
   if (window._reenrichMode) {
     window._reenrichMode = false;
+    document.getElementById('progressFill').style.width = '0%';
+    document.getElementById('progressFill').style.background = 'var(--accent)';
+    document.getElementById('progressPct').textContent = '0%';
+    document.getElementById('progressLabel').textContent = 'Re-enriching...';
     goStep(3);
-    await runChunkedEnrich('/api/reenrich', {dataset_id: window._reenrichDatasetId, reset: true});
+    const r = await apiFetch('/api/reenrich', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({dataset_id: window._reenrichDatasetId})});
+    const d = await r.json();
+    if (d.error) { alert(d.error); return; }
+    currentPollJobId = d.job_id;
+    pollJob(d.job_id);
   } else {
     _origStartEnrich();
   }
 };
 
-// ── Settings & Onboarding ──
+// ── Settings & Keys ──
 const KEY_DEFS = [
   {id: 'GOOGLE_API_KEY', label: 'Google (Gemini)', hint: 'Powers search scoring, clarifying questions, and feedback synthesis. Get one at aistudio.google.com/apikey (free tier available)', required: true},
   {id: 'BRAVE_API_KEY', label: 'Brave Search', hint: 'For finding LinkedIn profiles from names/emails. Get one at brave.com/search/api (free tier: 2,000 queries/mo)', required: true},
@@ -1059,8 +1277,9 @@ function renderKeyFields(containerId, values) {
 }
 
 async function loadKeys() {
-  const r = await fetch('/api/keys');
-  return await r.json();
+  const r = await apiFetch('/api/keys');
+  const data = await r.json();
+  return data.keys || data;  // API returns {keys: {...}}, unwrap it
 }
 
 async function saveKeys() {
@@ -1069,12 +1288,11 @@ async function saveKeys() {
     const val = document.getElementById('key-' + k.id).value.trim();
     if (val) keys[k.id] = val;
   });
-  const r = await fetch('/api/keys', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(keys)});
+  const r = await apiFetch('/api/keys', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(keys)});
   const d = await r.json();
   if (d.ok) {
     document.getElementById('keySaveStatus').textContent = 'Saved!';
     setTimeout(() => document.getElementById('keySaveStatus').textContent = '', 2000);
-    // Re-render to show Connected status
     const vals = await loadKeys();
     renderKeyFields('keyFields', vals);
   }
@@ -1090,7 +1308,7 @@ async function saveOnboardingKeys() {
     }
   });
   if (Object.keys(keys).length) {
-    await fetch('/api/keys', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(keys)});
+    await apiFetch('/api/keys', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(keys)});
   }
   document.getElementById('onboardingModal').style.display = 'none';
 }
@@ -1099,21 +1317,116 @@ function skipOnboarding() {
   document.getElementById('onboardingModal').style.display = 'none';
 }
 
-async function initApp() {
-  const keys = await loadKeys();
+// ── Airtable Integration ──
+let atMappings = null;
 
-  // Settings page
-  renderKeyFields('keyFields', keys);
+async function airtableConnect() {
+  const apiKey = document.getElementById('at-api-key').value.trim();
+  const baseId = document.getElementById('at-base-id').value.trim();
+  const tableName = document.getElementById('at-table-name').value.trim();
 
-  // Onboarding: show if no keys are set and no datasets exist
-  const ds = await fetch('/api/datasets').then(r => r.json());
-  const hasAnyKey = KEY_DEFS.some(k => keys[k.id]);
-  if (!hasAnyKey && ds.length === 0) {
-    renderKeyFields('onboardingKeys', keys);
-    document.getElementById('onboardingModal').style.display = 'flex';
+  if (!apiKey || !baseId || !tableName) {
+    document.getElementById('at-status').textContent = 'All three fields are required.';
+    document.getElementById('at-status').style.color = 'var(--red)';
+    return;
   }
 
-  loadDatasets();
+  document.getElementById('at-connect-btn').disabled = true;
+  document.getElementById('at-status').textContent = 'Connecting...';
+  document.getElementById('at-status').style.color = 'var(--text2)';
+
+  try {
+    const r = await apiFetch('/api/airtable/connect', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({api_key: apiKey, base_id: baseId, table_name: tableName}),
+    });
+    const d = await r.json();
+    document.getElementById('at-connect-btn').disabled = false;
+
+    if (d.error) {
+      document.getElementById('at-status').textContent = d.error;
+      document.getElementById('at-status').style.color = 'var(--red)';
+      return;
+    }
+
+    document.getElementById('at-status').textContent = 'Connected!';
+    document.getElementById('at-status').style.color = 'var(--green)';
+    document.getElementById('at-preview-header').textContent = `${d.row_count} records found \u00b7 ${d.columns.length} columns`;
+    document.getElementById('at-ds-name').value = `Airtable: ${tableName}`;
+
+    // Render schema mappings if available
+    if (d.suggested_mappings) {
+      atMappings = d.suggested_mappings;
+      renderSchema.call(null, atMappings);
+      // Move schema into Airtable preview section
+      document.getElementById('at-schema-groups').innerHTML = document.getElementById('schemaGroups').innerHTML;
+      // Rebind mapping changes to atMappings
+      document.getElementById('at-schema-groups').querySelectorAll('select').forEach((sel, i) => {
+        sel.onchange = function() { atMappings[i].field_type = this.value; };
+      });
+    }
+
+    document.getElementById('at-preview').style.display = 'block';
+  } catch(e) {
+    document.getElementById('at-connect-btn').disabled = false;
+    document.getElementById('at-status').textContent = 'Connection failed. Check your credentials.';
+    document.getElementById('at-status').style.color = 'var(--red)';
+  }
+}
+
+async function airtableImport() {
+  const apiKey = document.getElementById('at-api-key').value.trim();
+  const baseId = document.getElementById('at-base-id').value.trim();
+  const tableName = document.getElementById('at-table-name').value.trim();
+  const dsName = document.getElementById('at-ds-name').value.trim() || `Airtable: ${tableName}`;
+
+  if (!atMappings) { alert('Connect to Airtable first.'); return; }
+
+  showLoading('Importing from Airtable...');
+  try {
+    const r = await apiFetch('/api/airtable/import', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        api_key: apiKey,
+        base_id: baseId,
+        table_name: tableName,
+        mappings: atMappings,
+        dataset_name: dsName,
+      }),
+    });
+    const d = await r.json();
+    hideLoading();
+
+    if (d.error) { alert(d.error); return; }
+
+    document.getElementById('at-preview').style.display = 'none';
+    document.getElementById('at-status').textContent = `Imported ${d.profiles_imported} profiles (${d.rows_skipped} skipped). View in Datasets.`;
+    document.getElementById('at-status').style.color = 'var(--green)';
+  } catch(e) { hideLoading(); }
+}
+
+// ── App init ──
+async function initApp() {
+  showLoading('Loading...');
+  try {
+    const keys = await loadKeys();
+    renderKeyFields('keyFields', keys);
+
+    const ds = await (await apiFetch('/api/datasets')).json();
+    // Only show onboarding in local mode when no keys are configured
+    if (window.APP_MODE === 'local') {
+      const hasAnyKey = KEY_DEFS.some(k => keys[k.id]);
+      if (!hasAnyKey && ds.length === 0) {
+        renderKeyFields('onboardingKeys', keys);
+        document.getElementById('onboardingModal').style.display = 'flex';
+      }
+    }
+
+    loadDatasets();
+    hideLoading();
+  } catch(e) { hideLoading(); }
 }
 
 // ── Search ──
@@ -1132,7 +1445,7 @@ function sShow(step) {
 }
 
 async function loadSearchList() {
-  const {searches} = await (await fetch('/api/search/searches')).json();
+  const {searches} = await (await apiFetch('/api/search/searches')).json();
   const el = document.getElementById('search-list');
   if (!searches.length) { el.innerHTML = '<div style="color:var(--text3);font-size:13px;padding:8px 0;">No saved searches yet.</div>'; return; }
   el.innerHTML = searches.map(s => `
@@ -1144,9 +1457,12 @@ async function loadSearchList() {
 }
 
 async function loadSearchDatasets() {
-  const {datasets} = await (await fetch('/api/search/datasets')).json();
+  const {datasets} = await (await apiFetch('/api/search/datasets')).json();
+  const opts = '<option value="">All datasets</option>' + datasets.map(d => `<option value="${d.id}">${d.name} (${d.profiles})</option>`).join('');
   const sel = document.getElementById('search-dataset');
-  if (sel) sel.innerHTML = '<option value="">All datasets</option>' + datasets.map(d => `<option value="${d.id}">${d.name} (${d.profiles})</option>`).join('');
+  if (sel) sel.innerHTML = opts;
+  const sel2 = document.getElementById('search-dataset-results');
+  if (sel2) sel2.innerHTML = opts;
 }
 
 function searchNewFlow() {
@@ -1165,7 +1481,7 @@ function searchNewFlow() {
 function searchBackToPicker() { sShow('picker'); loadSearchList(); }
 
 async function searchLoad(id) {
-  const data = await (await fetch(`/api/search/searches/${id}`)).json();
+  const data = await (await apiFetch(`/api/search/searches/${id}`)).json();
   sId = id;
   if (data.cache?.scores && Object.keys(data.cache.scores).length) { await searchShowResults(id, data); }
   else { searchNewFlow(); sId = id; document.getElementById('search-name').value = data.name; }
@@ -1186,48 +1502,32 @@ async function searchChatSend() {
   const text = input.value.trim();
   if (!text) return;
   input.value = '';
-
   chatAppend('user', text);
-
-  // First message = the query
   const isFirstMessage = !sChatQuery;
   if (isFirstMessage) {
     sChatQuery = text;
-    // Auto-set search name from first few words
     if (!document.getElementById('search-name').value) {
       document.getElementById('search-name').value = text.substring(0, 60);
     }
   }
-
-  // Disable input while waiting
   input.disabled = true;
   document.getElementById('search-chat-btn').disabled = true;
-
-  // Show thinking indicator
   chatAppend('assistant', '<span style="color:var(--text3);">Thinking...</span>');
 
-  const res = await fetch('/api/search/chat', {
+  const res = await apiFetch('/api/search/chat', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({
-      query: sChatQuery,
-      session_id: sChatSession,
-      answer: isFirstMessage ? null : text,
-      search_id: sId,
-    })
+    body: JSON.stringify({ query: sChatQuery, session_id: sChatSession, answer: isFirstMessage ? null : text, search_id: sId }),
   });
   const data = await res.json();
-
-  // Remove thinking indicator
   const chat = document.getElementById('search-chat');
   if (chat.lastElementChild) chat.removeChild(chat.lastElementChild);
 
   if (data.done) {
-    // DONE — disable input, show summary, run search
     input.disabled = true;
     document.getElementById('search-chat-btn').disabled = true;
     document.getElementById('search-skip-btn').style.display = 'none';
-    chatAppend('assistant', 'Got it — running the search now.');
+    chatAppend('assistant', 'Got it \u2014 running the search now.');
     searchRun(data.context || data.summary || '');
   } else {
     input.disabled = false;
@@ -1239,17 +1539,15 @@ async function searchChatSend() {
   }
 }
 
-function searchSkipToScore() {
-  searchRun('');
-}
+function searchSkipToScore() { searchRun(''); }
 
 async function searchRun(clarification) {
   const name = document.getElementById('search-name').value.trim() || 'Untitled';
-  const query = sChatQuery || document.getElementById('search-query')?.value?.trim() || '';
+  const query = sChatQuery || '';
   const dataset_id = document.getElementById('search-dataset')?.value || undefined;
   if (!query) { alert('No query found'); sShow('new'); return; }
   sShow('progress'); document.getElementById('search-progress-fill').style.width = '0%';
-  const data = await (await fetch('/api/search/score', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({name, query, search_id:sId, dataset_id, clarification_context:clarification})})).json();
+  const data = await (await apiFetch('/api/search/score', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({name, query, search_id:sId, dataset_id, clarification_context:clarification})})).json();
   if (data.error) { alert(data.error); sShow('new'); return; }
   sId = data.search_id;
   pollSearchProgress(sId);
@@ -1258,22 +1556,26 @@ async function searchRun(clarification) {
 function pollSearchProgress(id) {
   if (sPoll) clearInterval(sPoll);
   sPoll = setInterval(async () => {
-    const data = await (await fetch(`/api/search/progress/${id}`)).json();
-    const pct = data.total > 0 ? Math.round(data.done / data.total * 100) : 0;
-    document.getElementById('search-progress-fill').style.width = pct + '%';
-    document.getElementById('search-progress-text').textContent = `Scoring... ${data.done}/${data.total}`;
-    if (data.status === 'done') { clearInterval(sPoll); searchShowResults(id); }
+    try {
+      const data = await (await apiFetch(`/api/search/progress/${id}`)).json();
+      const pct = data.total > 0 ? Math.round(data.done / data.total * 100) : 0;
+      document.getElementById('search-progress-fill').style.width = pct + '%';
+      document.getElementById('search-progress-text').textContent = `Scoring... ${data.done}/${data.total}`;
+      if (data.status === 'done') { clearInterval(sPoll); searchShowResults(id); }
+    } catch(e) {}
   }, 800);
 }
 
 async function searchShowResults(id, sd) {
-  if (!sd) sd = await (await fetch(`/api/search/searches/${id}`)).json();
+  if (!sd) sd = await (await apiFetch(`/api/search/searches/${id}`)).json();
   const rp = document.getElementById('search-rules-panel');
-  if (sd.search_rules?.length) { rp.style.display = 'block'; document.getElementById('search-rules-list').innerHTML = sd.search_rules.map(r => `<div style="padding:3px 0;font-size:12px;">• ${r}</div>`).join(''); }
+  if (sd.search_rules?.length) { rp.style.display = 'block'; document.getElementById('search-rules-list').innerHTML = sd.search_rules.map(r => `<div style="padding:3px 0;font-size:12px;">\u2022 ${r}</div>`).join(''); }
   else rp.style.display = 'none';
 
-  const {results} = await (await fetch(`/api/search/searches/${id}/results`)).json();
-  document.getElementById('search-results-header').innerHTML = `<span id="search-name-display" style="font-weight:600;cursor:pointer;" onclick="searchEditName()" title="Click to rename">${sd.name} <span style="font-size:11px;opacity:0.5;">&#9998;</span></span> — ${results.length} scored (${sd.feedback_log?.length||0} feedback)`;
+  const resultsData = await (await apiFetch(`/api/search/searches/${id}/results`)).json();
+  const results = resultsData.results;
+  const excludedCount = resultsData.excluded_count || 0;
+  document.getElementById('search-results-header').innerHTML = `<span id="search-name-display" style="font-weight:600;cursor:pointer;" onclick="searchEditName()" title="Click to rename">${sd.name} <span style="font-size:11px;opacity:0.5;">&#9998;</span></span> \u2014 ${results.length} scored (${sd.feedback_log?.length||0} feedback)`;
   document.getElementById('search-results-list').innerHTML = results.slice(0,50).map((r,i) => `
     <div class="card" style="padding:14px;">
       <div style="display:flex;justify-content:space-between;align-items:center;">
@@ -1282,14 +1584,18 @@ async function searchShowResults(id, sd) {
       </div>
       <div style="font-size:12px;color:var(--text2);font-style:italic;margin:6px 0;">${r.reasoning||''}</div>
       <div style="display:flex;gap:4px;align-items:center;margin-top:6px;">
-        <button class="btn sm" onclick="sRate('${r.id}',\`${(r.name||'').replace(/`/g,'')}\`,'strong_yes',this)">★</button>
-        <button class="btn sm" onclick="sRate('${r.id}',\`${(r.name||'').replace(/`/g,'')}\`,'yes',this)">✓</button>
-        <button class="btn sm" onclick="sRate('${r.id}',\`${(r.name||'').replace(/`/g,'')}\`,'no',this)">✗</button>
-        <button class="btn sm" onclick="sRate('${r.id}',\`${(r.name||'').replace(/`/g,'')}\`,'strong_no',this)">✗✗</button>
+        <button class="btn sm" onclick="sRate('${r.id}',\`${(r.name||'').replace(/`/g,'')}\`,'strong_yes',this)">\u2605</button>
+        <button class="btn sm" onclick="sRate('${r.id}',\`${(r.name||'').replace(/`/g,'')}\`,'yes',this)">\u2713</button>
+        <button class="btn sm" onclick="sRate('${r.id}',\`${(r.name||'').replace(/`/g,'')}\`,'no',this)">\u2717</button>
+        <button class="btn sm" onclick="sRate('${r.id}',\`${(r.name||'').replace(/`/g,'')}\`,'strong_no',this)">\u2717\u2717</button>
+        <button class="btn sm" onclick="sExclude('${r.id}')" title="Remove from results (not negative feedback)" style="margin-left:4px;opacity:0.5;">\u25CB</button>
         <input type="text" placeholder="Why?" style="flex:1;padding:4px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px;" id="sr-${r.id}">
-        <label style="font-size:10px;color:var(--text3);white-space:nowrap;cursor:pointer;" title="Check this if your feedback applies to ALL searches, not just this one. Global feedback becomes a permanent rule like: 'When anyone says Republican, they mean passes PPO vetting.' Only check this for things that are always true, not preferences specific to this search."><input type="checkbox" id="sg-${r.id}"> global <span style="display:inline-block;width:13px;height:13px;border-radius:50%;background:var(--border);text-align:center;font-size:9px;line-height:13px;color:var(--text2);cursor:help;">i</span></label>
+        <label style="font-size:10px;color:var(--text3);white-space:nowrap;cursor:pointer;" title="Check this if your feedback applies to ALL searches, not just this one."><input type="checkbox" id="sg-${r.id}"> global</label>
       </div>
     </div>`).join('');
+  if (excludedCount > 0) {
+    document.getElementById('search-results-list').innerHTML += '<div style="text-align:center;padding:12px;font-size:12px;color:var(--text3);cursor:pointer;" onclick="sShowExcluded()">' + excludedCount + ' hidden profile' + (excludedCount>1?'s':'') + ' - click to show</div>';
+  }
   sShow('results');
 }
 
@@ -1297,19 +1603,35 @@ async function sRate(pid, pname, rating, btn) {
   const reason = document.getElementById('sr-'+pid)?.value||'';
   const scope = document.getElementById('sg-'+pid)?.checked ? 'global' : 'search';
   const wasSelected = btn.style.background && btn.style.background !== '';
-  // Clear all buttons first
   btn.parentElement.querySelectorAll('.btn').forEach(b => b.style.background='');
-  if (wasSelected) {
-    // Clicking the same button again = unselect (no feedback sent)
-    return;
-  }
+  if (wasSelected) return;
   btn.style.background = rating.includes('yes') ? 'var(--green-light)' : 'var(--red-light)';
-  await fetch('/api/search/feedback', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({search_id:sId, profile_id:pid, profile_name:pname, rating, reason, scope})});
+  await apiFetch('/api/search/feedback', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({search_id:sId, profile_id:pid, profile_name:pname, rating, reason, scope})});
+}
+
+async function sExclude(profileId) {
+  await apiFetch('/api/search/searches/' + sId + '/exclude', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({profile_id: profileId})
+  });
+  searchShowResults(sId);
+}
+
+async function sShowExcluded() {
+  var s = await (await apiFetch('/api/search/searches/' + sId)).json();
+  var excluded = s.excluded_profile_ids || [];
+  for (var i = 0; i < excluded.length; i++) {
+    await apiFetch('/api/search/searches/' + sId + '/unexclude', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({profile_id: excluded[i]})
+    });
+  }
+  searchShowResults(sId);
 }
 
 async function searchRerun() {
   document.getElementById('btn-rerun').textContent = 'Synthesizing...';
-  const {proposal} = await (await fetch(`/api/search/searches/${sId}/synthesize`, {method:'POST'})).json();
+  const {proposal} = await (await apiFetch(`/api/search/searches/${sId}/synthesize`, {method:'POST'})).json();
   document.getElementById('btn-rerun').textContent = 'Re-run with feedback';
   if (proposal && (proposal.new_rules?.length || proposal.add_exemplars?.length || proposal.modified_rules?.length)) {
     sProposal = proposal;
@@ -1331,34 +1653,33 @@ async function searchRerun() {
 }
 
 async function searchAcceptProposal() {
-  // Read edited rule values from input fields
   if (sProposal.new_rules) {
     sProposal.new_rules = sProposal.new_rules.map((r, i) => {
       const el = document.getElementById(`prop-rule-${i}`);
       return el ? el.value.trim() : r;
-    }).filter(r => r); // drop blanks (user cleared it = reject that rule)
+    }).filter(r => r);
   }
-  await fetch(`/api/search/searches/${sId}/apply_proposal`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({proposal:sProposal})});
+  await apiFetch(`/api/search/searches/${sId}/apply-proposal`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({proposal:sProposal})});
   document.getElementById('search-proposal').style.display = 'none'; sProposal = null; doSearchRerun();
 }
 function searchRejectProposal() { document.getElementById('search-proposal').style.display = 'none'; sProposal = null; doSearchRerun(); }
 
 async function doSearchRerun() {
   sShow('progress'); document.getElementById('search-progress-fill').style.width = '0%';
-  await fetch(`/api/search/searches/${sId}/rerun`, {method:'POST'});
+  await apiFetch(`/api/search/searches/${sId}/rerun`, {method:'POST'});
   pollSearchProgress(sId);
 }
 
 async function searchEditName() {
-  const newName = prompt('Rename search:', document.getElementById('search-name-display')?.textContent?.replace(/\s*✎/, '').trim());
+  const newName = prompt('Rename search:', document.getElementById('search-name-display')?.textContent?.replace(/\s*\u270e/, '').trim());
   if (!newName || !sId) return;
-  await fetch(`/api/search/searches/${sId}/rename`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({name: newName})});
+  await apiFetch(`/api/search/searches/${sId}/rename`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({name: newName})});
   searchShowResults(sId);
 }
 
 // ── Global Rules ──
 async function loadGlobalRules() {
-  const {rules} = await (await fetch('/api/search/global_rules')).json();
+  const {rules} = await (await apiFetch('/api/search/global-rules')).json();
   const el = document.getElementById('global-rules-list');
   if (!rules.length) { el.innerHTML = '<div style="color:var(--text3);font-size:12px;">No global rules yet.</div>'; return; }
   el.innerHTML = rules.map(r => `
@@ -1374,14 +1695,14 @@ async function addGlobalRule() {
   if (!text.toLowerCase().startsWith('when')) {
     if (!confirm('Global rules work best starting with "When [condition]..." so the AI knows when to apply them. Add anyway?')) return;
   }
-  await fetch('/api/search/global_rules', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({text})});
+  await apiFetch('/api/search/global-rules', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({text})});
   document.getElementById('new-global-rule').value = '';
   loadGlobalRules();
 }
 
 // ── Search Export/Import ──
 async function searchExport(id) {
-  const data = await (await fetch(`/api/search/searches/${id}`)).json();
+  const data = await (await apiFetch(`/api/search/searches/${id}`)).json();
   const blob = new Blob([JSON.stringify(data, null, 2)], {type:'application/json'});
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
@@ -1396,7 +1717,7 @@ function searchImportFile(input) {
   reader.onload = async (e) => {
     try {
       const data = JSON.parse(e.target.result);
-      await fetch('/api/search/import_search', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(data)});
+      await apiFetch('/api/search/import', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(data)});
       loadSearchList();
     } catch(err) { alert('Invalid search JSON: ' + err.message); }
   };
@@ -1407,61 +1728,20 @@ function searchImportFile(input) {
 const _origShowPage = showPage;
 showPage = function(name) { _origShowPage(name); if (name === 'search') { loadSearchList(); loadSearchDatasets(); loadGlobalRules(); } };
 
-// Init
-initApp();
-</script>
-
-<!-- Cloud auth: check session, show login if needed -->
-<script>
-(function() {
-  // Skip auth check on login page
-  if (window.__skipAuth) return;
-  
-  fetch('/api/keys').then(r => {
-    if (r.status === 401) {
-      document.getElementById('login-overlay').style.display = 'flex';
-      document.querySelector('.shell').style.display = 'none';
-    } else {
-      document.getElementById('login-overlay').style.display = 'none';
-    }
-  }).catch(() => {
-    document.getElementById('login-overlay').style.display = 'flex';
-    document.querySelector('.shell').style.display = 'none';
-  });
-})();
-
-async function doLogin() {
-  const name = document.getElementById('login-name').value.trim();
-  const password = document.getElementById('login-password').value;
-  const err = document.getElementById('login-error');
-  err.textContent = '';
-  
-  if (!name || !password) { err.textContent = 'Enter name and password'; return; }
-  
-  const resp = await fetch('/api/auth_login', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({name, password}),
-  });
-  const data = await resp.json();
-  
-  if (data.ok) {
-    document.getElementById('login-overlay').style.display = 'none';
-    document.querySelector('.shell').style.display = 'flex';
-    // Update account indicator
-    const el = document.getElementById('account-name');
-    if (el) el.textContent = data.account.name;
-    location.reload();
-  } else {
-    err.textContent = data.error || 'Login failed';
-  }
+// ── Theme toggle ──
+document.getElementById('theme-toggle').addEventListener('click', function() {
+  var t = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', t);
+  localStorage.setItem('theme', t);
+  this.textContent = t === 'dark' ? 'Light' : 'Dark';
+});
+if (localStorage.getItem('theme') === 'dark') {
+  document.documentElement.setAttribute('data-theme', 'dark');
+  document.getElementById('theme-toggle').textContent = 'Light';
 }
 
-async function doLogout() {
-  await fetch('/api/auth_logout', {method: 'POST'});
-  location.reload();
-}
+// ── Boot ──
+checkSession();
 </script>
-
 </body>
 </html>
