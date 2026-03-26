@@ -568,6 +568,43 @@ window.APP_MODE = 'cloud';
         </div>
       </div>
 
+      <!-- Email Outreach Template -->
+      <div class="card">
+        <div class="card-header">Email Outreach</div>
+        <div class="card-sub">Template for the "Reach Out" button in search results. Opens Gmail with a pre-filled draft.</div>
+
+        <div style="margin-bottom:14px;">
+          <label style="font-size:12px;font-weight:600;color:var(--text2);display:block;margin-bottom:3px;">Your Name</label>
+          <input id="outreach-name" type="text" placeholder="e.g. Jonah Weinbaum"
+            style="width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;">
+        </div>
+        <div style="margin-bottom:14px;">
+          <label style="font-size:12px;font-weight:600;color:var(--text2);display:block;margin-bottom:3px;">What you're building / your org</label>
+          <input id="outreach-org" type="text" placeholder="e.g. a program called Voyager focused on AI safety"
+            style="width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;">
+        </div>
+        <div style="margin-bottom:14px;">
+          <label style="font-size:12px;font-weight:600;color:var(--text2);display:block;margin-bottom:3px;">Subject line</label>
+          <input id="outreach-subject" type="text" placeholder="e.g. Quick chat about [topic]?"
+            style="width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;">
+        </div>
+        <div style="margin-bottom:14px;">
+          <label style="font-size:12px;font-weight:600;color:var(--text2);display:block;margin-bottom:3px;">Email body template</label>
+          <textarea id="outreach-body" rows="4" placeholder="Hey {name}, my name is {my_name}. I'm building {my_org} and would love to chat about {topic}. Would you have 20 minutes this week?"
+            style="width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;resize:vertical;"></textarea>
+          <div style="font-size:11px;color:var(--text3);margin-top:2px;">Variables: {name} = their name, {my_name} = your name, {my_org} = your org, {topic} = from the search query</div>
+        </div>
+        <div style="margin-bottom:14px;">
+          <label style="font-size:12px;font-weight:600;color:var(--text2);display:block;margin-bottom:3px;">Gmail account (0 = default, 1 = second account, etc.)</label>
+          <input id="outreach-gmail" type="number" value="0" min="0" max="5"
+            style="width:80px;padding:7px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;">
+        </div>
+        <div class="btn-group" style="margin-top:0;">
+          <button class="btn btn-primary" onclick="saveOutreach()">Save</button>
+          <span id="outreach-save-status" style="font-size:12px;color:var(--green);align-self:center;"></span>
+        </div>
+      </div>
+
       <div class="card" style="background:#f8fafc;">
         <div class="card-header" style="font-size:13px;">How your data is handled</div>
         <div style="font-size:13px;color:var(--text2);line-height:1.7;">
@@ -1609,7 +1646,7 @@ async function searchShowResults(id, sd) {
   document.getElementById('search-results-list').innerHTML = results.slice(0,50).map((r,i) => `
     <div class="card" style="padding:14px;">
       <div style="display:flex;justify-content:space-between;align-items:center;">
-        <div><span style="font-weight:600;cursor:pointer;text-decoration:underline;text-decoration-color:var(--border);" onclick="showSearchProfile('${r.id}')">${i+1}. ${r.name}</span>${r.linkedin_url?` <a href="${r.linkedin_url}" target="_blank" style="font-size:11px;color:var(--accent);">LinkedIn</a>`:''}</div>
+        <div><span style="font-weight:600;cursor:pointer;text-decoration:underline;text-decoration-color:var(--border);" onclick="showSearchProfile('${r.id}')">${i+1}. ${r.name}</span>${r.linkedin_url?` <a href="${r.linkedin_url}" target="_blank" style="font-size:11px;color:var(--accent);">LinkedIn</a>`:''} <a href="#" onclick="event.preventDefault();reachOut('${r.id}','${(r.name||'').replace(/'/g,"")}')" style="font-size:11px;color:var(--green);">Reach Out</a></div>
         <span style="font-size:22px;font-weight:700;color:${r.score>=70?'var(--green)':r.score>=50?'var(--amber)':'var(--red)'};">${r.score}</span>
       </div>
       <div style="font-size:12px;color:var(--text2);font-style:italic;margin:6px 0;">${r.reasoning||''}</div>
@@ -1756,7 +1793,90 @@ function searchImportFile(input) {
 }
 
 const _origShowPage = showPage;
-showPage = function(name) { _origShowPage(name); if (name === 'search') { loadSearchList(); loadSearchDatasets(); loadGlobalRules(); } };
+showPage = function(name) { _origShowPage(name); if (name === 'search') { loadSearchList(); loadSearchDatasets(); loadGlobalRules(); } if (name === 'settings') { loadOutreach(); } };
+
+// ── Email Outreach ──
+var outreachDefaults = {
+  name: '', org: '', subject: 'Quick chat?',
+  body: 'Hey {name}, my name is {my_name}. I\'m building {my_org} and would love to chat about {topic}. Would you have 20 minutes this week?',
+  gmail: 0,
+};
+
+function loadOutreach() {
+  var saved = localStorage.getItem('ps-outreach');
+  var o = saved ? JSON.parse(saved) : outreachDefaults;
+  document.getElementById('outreach-name').value = o.name || '';
+  document.getElementById('outreach-org').value = o.org || '';
+  document.getElementById('outreach-subject').value = o.subject || '';
+  document.getElementById('outreach-body').value = o.body || '';
+  document.getElementById('outreach-gmail').value = o.gmail || 0;
+  return o;
+}
+
+function saveOutreach() {
+  var o = {
+    name: document.getElementById('outreach-name').value,
+    org: document.getElementById('outreach-org').value,
+    subject: document.getElementById('outreach-subject').value,
+    body: document.getElementById('outreach-body').value,
+    gmail: parseInt(document.getElementById('outreach-gmail').value) || 0,
+  };
+  localStorage.setItem('ps-outreach', JSON.stringify(o));
+  document.getElementById('outreach-save-status').textContent = 'Saved!';
+  setTimeout(function() { document.getElementById('outreach-save-status').textContent = ''; }, 2000);
+}
+
+async function reachOut(profileId, profileName) {
+  // Load outreach settings
+  var saved = localStorage.getItem('ps-outreach');
+  var o = saved ? JSON.parse(saved) : outreachDefaults;
+
+  if (!o.name) {
+    alert('Set up your outreach template in Settings first.');
+    showPage('settings');
+    return;
+  }
+
+  // Get the profile's email
+  var email = '';
+  try {
+    var r = await apiFetch('/api/profile/' + profileId);
+    var p = await r.json();
+    email = p.email || '';
+  } catch(e) {}
+
+  // Get the current search query as the topic
+  var topic = '';
+  var queryEl = document.getElementById('search-name');
+  if (queryEl) topic = queryEl.value;
+  if (!topic) {
+    var headerEl = document.getElementById('search-results-header');
+    if (headerEl) topic = headerEl.textContent.split(' — ')[0] || '';
+  }
+
+  // Fill template
+  var subject = (o.subject || 'Quick chat?')
+    .replace(/\{name\}/g, profileName.split(' ')[0])
+    .replace(/\{my_name\}/g, o.name)
+    .replace(/\{my_org\}/g, o.org)
+    .replace(/\{topic\}/g, topic);
+
+  var body = (o.body || '')
+    .replace(/\{name\}/g, profileName.split(' ')[0])
+    .replace(/\{my_name\}/g, o.name)
+    .replace(/\{my_org\}/g, o.org)
+    .replace(/\{topic\}/g, topic);
+
+  // Build Gmail compose URL
+  // /u/0/ = default account, /u/1/ = second, etc.
+  var gmailAccount = o.gmail || 0;
+  var gmailUrl = 'https://mail.google.com/mail/u/' + gmailAccount + '/?view=cm&fs=1'
+    + '&to=' + encodeURIComponent(email)
+    + '&su=' + encodeURIComponent(subject)
+    + '&body=' + encodeURIComponent(body);
+
+  window.open(gmailUrl, '_blank');
+}
 
 // ── Theme toggle ──
 document.getElementById('theme-toggle').addEventListener('click', function() {
