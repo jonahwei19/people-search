@@ -1201,7 +1201,8 @@ function renderKeyFields(containerId, values) {
 
 async function loadKeys() {
   const r = await apiFetch('/api/keys');
-  return await r.json();
+  const data = await r.json();
+  return data.keys || data;  // API returns {keys: {...}}, unwrap it
 }
 
 async function saveKeys() {
