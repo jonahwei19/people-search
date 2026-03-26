@@ -655,7 +655,7 @@ async function doLogin() {
 
   showLoading('Signing in...');
   try {
-    const r = await fetch('/api/auth/login', {
+    const r = await fetch('/api/auth_login', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({name, password}),
@@ -682,7 +682,7 @@ async function doLogin() {
 }
 
 async function doLogout() {
-  try { await fetch('/api/auth/logout', {method: 'POST'}); } catch(e) {}
+  try { await fetch('/api/auth_logout', {method: 'POST'}); } catch(e) {}
   document.getElementById('app-shell').style.display = 'none';
   document.getElementById('login-page').style.display = 'flex';
   document.getElementById('login-password').value = '';
@@ -710,14 +710,15 @@ async function checkSession() {
   }
   try {
     showLoading('Checking session...');
-    const r = await fetch('/api/auth/session');
-    const d = await r.json();
+    const r = await fetch('/api/keys');
     hideLoading();
-    if (r.ok && d.authenticated) {
+    if (r.ok) {
+      // Session is valid — go to app
+      const d = await r.json();
       currentAccountName = d.account_name || '';
       document.getElementById('login-page').style.display = 'none';
       document.getElementById('app-shell').style.display = 'flex';
-      document.getElementById('account-name-display').textContent = currentAccountName;
+      document.getElementById('account-name-display').textContent = currentAccountName || 'Account';
       initApp();
     }
   } catch (e) {
