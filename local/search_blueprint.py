@@ -16,7 +16,7 @@ from pathlib import Path
 
 from flask import Blueprint, jsonify, request
 
-from search.feedback import apply_synthesis, propose_global_rule, synthesize_rules
+from search.feedback import apply_synthesis, propose_global_rule, synthesize_rules, infer_rejection_reason, create_negative_exemplar
 from search.global_filter import filter_global_rules
 from search.llm_judge import rank_results, score_profiles_sync
 from search.models import (
@@ -207,8 +207,13 @@ def get_results(search_id):
     profiles = _get_v2_profiles()
     profile_map = {p.id: p for p in profiles}
 
+    excluded = set(s.excluded_profile_ids)
     results = []
+    excluded_count = 0
     for pid, score in sorted(s.cache.scores.items(), key=lambda x: -x[1].score):
+        if pid in excluded:
+            excluded_count += 1
+            continue
         p = profile_map.get(pid)
         results.append({
             "id": pid,
@@ -218,7 +223,7 @@ def get_results(search_id):
             "raw_text_preview": (p.raw_text[:400] if p else ""),
             "linkedin_url": (p.identity.linkedin_url if p else ""),
         })
-    return jsonify({"results": results})
+    return jsonify({"results": results, "excluded_count": excluded_count})
 
 
 @search_bp.route("/api/search/feedback", methods=["POST"])
@@ -229,26 +234,53 @@ def submit_feedback():
     if not s:
         return jsonify({"error": "not found"}), 404
 
+    rating = data.get("rating", "no")
+    reason = data.get("reason", "").strip()
+    profile_id = data.get("profile_id", "")
+
+    # Auto-infer reason for strong rejections without explanation
+    inferred = None
+    if rating in ("strong_no", "no") and not reason:
+        profiles = _get_v2_profiles()
+        profile = next((p for p in profiles if p.id == profile_id), None)
+        if profile:
+            try:
+                inferred = infer_rejection_reason(s, profile)
+                reason = inferred.get("reason", "Rejected without reason")
+            except Exception:
+                reason = "Rejected without reason"
+
     event = FeedbackEvent(
-        profile_id=data.get("profile_id", ""),
+        profile_id=profile_id,
         profile_name=data.get("profile_name", ""),
-        rating=data.get("rating", "no"),
-        reason=data.get("reason"),
+        rating=rating,
+        reason=reason,
         reasoning_correction=data.get("reasoning_correction"),
         scope=data.get("scope", "search"),
     )
     s.feedback_log.append(event)
 
+    # Create negative exemplar for strong rejections
+    if rating == "strong_no":
+        profiles = _get_v2_profiles()
+        profile = next((p for p in profiles if p.id == profile_id), None)
+        if profile:
+            create_negative_exemplar(s, profile, reason)
+
     # If global scope, propose a global rule
     global_proposal = None
-    if data.get("scope") == "global" and data.get("reason"):
+    if data.get("scope") == "global" and reason:
         try:
             global_proposal = propose_global_rule(event, GLOBAL_RULES)
         except Exception:
             pass
 
     s.save(str(SEARCHES_DIR))
-    return jsonify({"status": "ok", "global_proposal": global_proposal})
+    return jsonify({
+        "status": "ok",
+        "global_proposal": global_proposal,
+        "inferred_reason": inferred,
+    })
 
 
 @search_bp.route("/api/search/searches/<search_id>/synthesize", methods=["POST"])
@@ -315,6 +347,32 @@ def rename_search(search_id):
         return jsonify({"error": "not found"}), 404
     s.name = request.json.get("name", s.name)
     s.save(str(SEARCHES_DIR))
+    return jsonify({"status": "ok"})
+
+
+@search_bp.route("/api/search/searches/<search_id>/exclude", methods=["POST"])
+def exclude_profile(search_id):
+    """Hide a profile from search results without negative feedback."""
+    s = SEARCHES.get(search_id)
+    if not s:
+        return jsonify({"error": "not found"}), 404
+    pid = request.json.get("profile_id", "")
+    if pid and pid not in s.excluded_profile_ids:
+        s.excluded_profile_ids.append(pid)
+        s.save(str(SEARCHES_DIR))
+    return jsonify({"status": "ok"})
+
+
+@search_bp.route("/api/search/searches/<search_id>/unexclude", methods=["POST"])
+def unexclude_profile(search_id):
+    """Unhide a profile from search results."""
+    s = SEARCHES.get(search_id)
+    if not s:
+        return jsonify({"error": "not found"}), 404
+    pid = request.json.get("profile_id", "")
+    if pid in s.excluded_profile_ids:
+        s.excluded_profile_ids.remove(pid)
+        s.save(str(SEARCHES_DIR))
     return jsonify({"status": "ok"})
 
 

@@ -1345,11 +1345,37 @@ async function searchShowResults(id, sd) {
         <button class="btn sm" onclick="sRate('${r.id}',\`${(r.name||'').replace(/`/g,'')}\`,'yes',this)">✓</button>
         <button class="btn sm" onclick="sRate('${r.id}',\`${(r.name||'').replace(/`/g,'')}\`,'no',this)">✗</button>
         <button class="btn sm" onclick="sRate('${r.id}',\`${(r.name||'').replace(/`/g,'')}\`,'strong_no',this)">✗✗</button>
+        <button class="btn sm" onclick="sExclude('${r.id}')" title="Remove from results (not negative feedback)" style="margin-left:4px;opacity:0.5;">○</button>
         <input type="text" placeholder="Why?" style="flex:1;padding:4px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px;" id="sr-${r.id}">
-        <label style="font-size:10px;color:var(--text3);white-space:nowrap;cursor:pointer;" title="Check this if your feedback applies to ALL searches, not just this one. Global feedback becomes a permanent rule like: 'When anyone says Republican, they mean passes PPO vetting.' Only check this for things that are always true, not preferences specific to this search."><input type="checkbox" id="sg-${r.id}"> global <span style="display:inline-block;width:13px;height:13px;border-radius:50%;background:var(--border);text-align:center;font-size:9px;line-height:13px;color:var(--text2);cursor:help;">i</span></label>
+        <label style="font-size:10px;color:var(--text3);white-space:nowrap;cursor:pointer;" title="Check this if your feedback applies to ALL searches, not just this one."><input type="checkbox" id="sg-${r.id}"> global <span style="display:inline-block;width:13px;height:13px;border-radius:50%;background:var(--border);text-align:center;font-size:9px;line-height:13px;color:var(--text2);cursor:help;">i</span></label>
       </div>
     </div>`).join('');
+  if (data.excluded_count > 0) {
+    document.getElementById('search-results-list').innerHTML += `<div style="text-align:center;padding:12px;font-size:12px;color:var(--text3);cursor:pointer;" onclick="sShowExcluded()">${data.excluded_count} hidden profile${data.excluded_count>1?'s':''} — click to show</div>`;
+  }
   sShow('results');
+}
+
+async function sExclude(profileId) {
+  await fetch(\`/api/search/searches/\${sId}/exclude\`, {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({profile_id: profileId})
+  });
+  // Remove the card from the DOM
+  loadSearchResults(sId);
+}
+
+async function sShowExcluded() {
+  // Temporarily unexclude all and reload
+  const s = await (await fetch(\`/api/search/searches/\${sId}\`)).json();
+  const excluded = s.excluded_profile_ids || [];
+  for (const pid of excluded) {
+    await fetch(\`/api/search/searches/\${sId}/unexclude\`, {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({profile_id: pid})
+    });
+  }
+  loadSearchResults(sId);
 }
 
 async function sRate(pid, pname, rating, btn) {

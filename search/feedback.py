@@ -19,21 +19,29 @@ MAX_EXEMPLARS = 10
 
 SYNTHESIS_SYSTEM = """You are analyzing user feedback on search results to improve future searches.
 
-Given feedback events (accept/reject with reasons), do three things:
+You have the FULL PROFILE DATA for each feedback event. Use it to understand WHY the user accepted or rejected each person — don't just echo their reason, look at the actual profile.
 
-1. RULES: Propose 0-2 new search-specific rules if a clear pattern exists across multiple feedbacks. Don't propose a rule from a single event.
+Do four things:
 
-2. EXEMPLAR CHANGES: Decide which profiles should become calibration exemplars. Keep total to ~10, ~2 per score level, balanced. Map ratings: strong_yes→95, yes→75, no→25, strong_no→5.
+1. PATTERN DETECTION: Look across ALL feedback events for patterns. If 3 people were rejected and they're all academics with no shipping experience, that's one rule — not three separate observations. Be specific: "Exclude profiles whose only experience is academic research positions" is better than "Exclude academics."
 
-3. CONSOLIDATION: Suggest consolidation if rules/exemplars are redundant.
+2. RULES: Propose 0-3 new search-specific rules based on patterns. Each rule must be:
+   - Actionable (a scorer can apply it)
+   - Specific (names the signal, not a vague category)
+   - Pattern-based (derived from 2+ feedback events, not just one)
+
+3. EXEMPLAR CHANGES: Strong accepts → positive exemplars (score 85-95). Strong rejects → negative exemplars (score 5-15). Include the KEY DISTINGUISHING FEATURE in the reason — what makes this person good/bad for this search.
+
+4. CONSOLIDATION: If existing rules overlap with new ones, merge them. Remove redundant exemplars. Keep total rules under 10 and exemplars under 10.
 
 Respond as JSON:
 {
-  "new_rules": ["rule text", ...],
+  "new_rules": ["specific, actionable rule text", ...],
   "modified_rules": [{"old": "old text", "new": "new text"}, ...],
-  "add_exemplars": [{"profile_id": "id", "profile_name": "name", "score": N, "reason": "why"}],
+  "remove_rules": ["rule text to remove", ...],
+  "add_exemplars": [{"profile_id": "id", "profile_name": "name", "score": N, "reason": "key distinguishing feature"}],
   "remove_exemplar_ids": ["id", ...],
-  "notes": "brief explanation"
+  "notes": "brief explanation of patterns found"
 }
 
 If no changes are warranted, return empty arrays."""
@@ -112,6 +120,61 @@ def apply_synthesis(search: DefinedSearch, proposal: dict, profiles: list[Profil
             score=ex_data.get("score", 50),
             reason=ex_data.get("reason", ""),
         ))
+
+
+INFER_REASON_SYSTEM = """The user rejected this candidate for a search but didn't say why.
+Based on the search query and the candidate's profile, infer the most likely reason in ONE sentence (max 15 words).
+Focus on the GAP — what's missing or wrong, not what's there.
+
+Respond as JSON:
+{"reason": "one sentence reason", "key_signal": "the specific thing that makes them a bad match"}"""
+
+
+def infer_rejection_reason(
+    search: DefinedSearch,
+    profile: Profile,
+) -> dict:
+    """Auto-generate a reason when user rejects without explaining."""
+    parts = [
+        f"SEARCH: {search.name}",
+        f"QUERY: {search.query}",
+    ]
+    if search.search_rules:
+        parts.append("SEARCH RULES:")
+        for r in search.search_rules:
+            parts.append(f"- {r}")
+    parts.append(f"\nREJECTED CANDIDATE: {profile.identity.name or 'Unknown'}")
+    parts.append(f"PROFILE:\n{profile.raw_text[:500]}")
+
+    try:
+        return call_gemini_json(INFER_REASON_SYSTEM, "\n".join(parts))
+    except Exception as e:
+        return {"reason": "Rejected without reason", "key_signal": "unknown"}
+
+
+def create_negative_exemplar(
+    search: DefinedSearch,
+    profile: Profile,
+    reason: str,
+) -> None:
+    """Add a profile as a negative exemplar (score 5) to calibrate the scorer."""
+    # Remove existing exemplar for this profile if any
+    search.exemplars = [ex for ex in search.exemplars if ex.profile_id != profile.id]
+
+    # Cap total exemplars
+    if len(search.exemplars) >= MAX_EXEMPLARS:
+        # Remove the oldest low-score exemplar to make room
+        low_exemplars = [ex for ex in search.exemplars if ex.score <= 20]
+        if low_exemplars:
+            search.exemplars.remove(low_exemplars[0])
+
+    search.exemplars.append(Exemplar(
+        profile_id=profile.id,
+        profile_name=profile.identity.name or "Unknown",
+        profile_summary=profile.raw_text[:300],
+        score=5,
+        reason=reason,
+    ))
 
 
 GLOBAL_RULE_CHECK_SYSTEM = """Evaluate if this feedback should become a global rule.

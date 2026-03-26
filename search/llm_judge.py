@@ -53,8 +53,19 @@ def build_system_prompt(
 Score each candidate 0-100. Return a JSON array, one entry per candidate:
 [{"id": "profile_id", "s": N, "r": "brief reason"}]
 
-90-100 = exceptional match. 70-89 = strong. 50-69 = partial. 30-49 = weak. 0-29 = no match.
-Keep reasons to <15 words. Differentiate scores precisely.""")
+SCORING CALIBRATION — follow these constraints strictly:
+- 95-100: Reserve for 1-2 candidates per batch AT MOST. Must be a near-perfect match.
+- 85-94: Strong match with clear, specific evidence. No more than 10-15% of candidates.
+- 70-84: Good match but missing something. This is where most decent candidates land.
+- 50-69: Partial match. Relevant background but significant gaps.
+- 30-49: Weak. Tangentially related at best.
+- 0-29: Not a match.
+
+Most candidates should score 20-60. If you're giving more than 3 candidates a 90+, you are being too generous — go back and differentiate. Use the FULL range.
+
+DIFFERENTIATION: Two candidates should NOT get the same score unless they are genuinely indistinguishable. If you're about to give the same score to multiple people, rank them relative to each other and spread by at least 3 points.
+
+Keep reasons to <15 words. Be specific — name the key signal, not a generic description.""")
 
     return "\n".join(parts)
 
