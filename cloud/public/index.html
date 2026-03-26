@@ -727,6 +727,10 @@ async function checkSession() {
   }
 }
 
+// Helper: Supabase returns JSONB columns as strings. Parse if needed.
+function jp(v) { if (typeof v === 'string') { try { return JSON.parse(v); } catch(e) {} } return v || {}; }
+function ja(v) { if (typeof v === 'string') { try { return JSON.parse(v); } catch(e) {} } return v || []; }
+
 // ── State ──
 let file = null, mappings = null, datasetId = null;
 
@@ -998,7 +1002,7 @@ async function loadDatasets() {
         <div class="ds-info" onclick="loadDatasetDetail('${d.id}')" style="cursor:pointer;">
           <div class="ds-name">${d.name}</div>
           <div class="ds-meta">${d.profiles} profiles &middot; ${d.created_at ? new Date(d.created_at).toLocaleDateString() : ''}</div>
-          <div class="ds-fields">${(typeof d.searchable_fields==='string'?JSON.parse(d.searchable_fields||'[]'):d.searchable_fields||[]).map(f=>'<span class="ds-field-tag">'+f+'</span>').join('')}</div>
+          <div class="ds-fields">${ja(d.searchable_fields).map(f=>'<span class="ds-field-tag">'+f+'</span>').join('')}</div>
         </div>
         <div class="ds-actions">
           <button class="btn btn-ghost" style="color:var(--red);font-size:12px;" onclick="event.stopPropagation();deleteDataset('${d.id}','${(d.name||'').replace(/'/g,"\\'")}')">Delete</button>
@@ -1021,7 +1025,7 @@ async function loadDatasetDetail(id) {
 
     const enriched = d.profiles.filter(p=>p.enrichment_status==='enriched').length;
     const pending = d.profiles.filter(p=>p.enrichment_status==='pending').length;
-    const hasContent = d.profiles.filter(p=>Object.keys(p.content_fields||{}).length>0).length;
+    const hasContent = d.profiles.filter(p=>Object.keys(jp(p.content_fields)).length>0).length;
     window._dsDetailId = id;
     document.getElementById('detailStats').innerHTML = `
       <div class="stat"><div class="stat-val">${d.profiles.length}</div><div class="stat-label">Total</div></div>
@@ -1042,7 +1046,7 @@ function renderProfiles(profiles, filter) {
   if (filter) {
     const q = filter.toLowerCase();
     list = profiles.filter(p => {
-      const md = p.metadata || {};
+      const md = jp(p.metadata);
       const loc = (md.app_what_is_your_nearest_city||md.city||'') + ' ' + (md.app_country_region_of_residence||md.country||'');
       const title = p.title || md.app_title || '';
       return (p.name||'').toLowerCase().includes(q) || (p.organization||'').toLowerCase().includes(q) || title.toLowerCase().includes(q) || (p.email||'').toLowerCase().includes(q) || loc.toLowerCase().includes(q);
@@ -1050,7 +1054,7 @@ function renderProfiles(profiles, filter) {
   }
   document.getElementById('profileCount').textContent = list.length + ' profiles';
   document.getElementById('profileList').innerHTML = list.map((p,i) => {
-    const md = p.metadata || {};
+    const md = jp(p.metadata);
     const loc = md.app_what_is_your_nearest_city || md.city || md.app_city || '';
     const country = md.app_country_region_of_residence || md.country || md.app_country || '';
     const locStr = [loc, country].filter(Boolean).join(', ');
@@ -1081,10 +1085,10 @@ function showProfile(idx) {
   if (p.twitter_url) links.push('<a href="'+p.twitter_url+'" target="_blank">Twitter/X</a>');
   if (p.website_url) links.push('<a href="'+p.website_url+'" target="_blank">Website</a>');
   if (p.resume_url) links.push('<a href="'+p.resume_url+'" target="_blank">Resume</a>');
-  if (p.other_links && p.other_links.length) p.other_links.forEach(l => links.push('<a href="'+l+'" target="_blank">Link</a>'));
+  if (ja(p.other_links).length) ja(p.other_links).forEach(l => links.push('<a href="'+l+'" target="_blank">Link</a>'));
   html += `<div class="subtitle">${[p.title, p.organization].filter(Boolean).join(' at ')}${links.length ? ' &middot; ' + links.join(' &middot; ') : ''}</div>`;
 
-  const li = p.linkedin_enriched || {};
+  const li = jp(p.linkedin_enriched);
   if (li.headline) html += `<div class="modal-section"><h3>Headline</h3><p>${li.headline}</p></div>`;
   if (li.summary) html += `<div class="modal-section"><h3>About</h3><p>${li.summary}</p></div>`;
   if (li.experience && li.experience.length) {
@@ -1102,7 +1106,7 @@ function showProfile(idx) {
     html += '</div>';
   }
 
-  const cf = p.content_fields || {};
+  const cf = jp(p.content_fields);
   for (const [k, v] of Object.entries(cf)) {
     if (v && v.trim()) {
       const label = k.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
@@ -1110,7 +1114,7 @@ function showProfile(idx) {
     }
   }
 
-  const md = p.metadata || {};
+  const md = jp(p.metadata);
   const mdEntries = Object.entries(md).filter(([k,v]) => v);
   if (mdEntries.length) {
     html += `<div class="modal-section"><h3>Metadata</h3>`;
@@ -1121,7 +1125,7 @@ function showProfile(idx) {
     html += '</div>';
   }
 
-  const elog = p.enrichment_log || [];
+  const elog = ja(p.enrichment_log);
   if (elog.length) {
     html += `<div class="modal-section"><h3>Enrichment Log</h3><div style="font-family:monospace;font-size:11px;line-height:1.6;color:var(--text2);background:#f8f9fa;padding:10px;border-radius:6px;max-height:200px;overflow-y:auto;">`;
     elog.forEach(line => { html += line.replace(/</g,'&lt;') + '<br>'; });
