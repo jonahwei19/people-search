@@ -68,6 +68,34 @@ HTML = r"""<!DOCTYPE html>
   --radius: 10px;
   --shadow: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
 }
+[data-theme="dark"] {
+  --bg: #0f1117;
+  --card: #1a1d27;
+  --border: #2a2d3a;
+  --text: #e4e4e7;
+  --text2: #a1a1aa;
+  --text3: #71717a;
+  --accent: #3b82f6;
+  --accent-light: #1e293b;
+  --green: #22c55e;
+  --green-light: #14271f;
+  --amber: #f59e0b;
+  --amber-light: #27200f;
+  --red: #ef4444;
+  --red-light: #2a1215;
+  --shadow: 0 1px 3px rgba(0,0,0,0.3), 0 1px 2px rgba(0,0,0,0.2);
+}
+[data-theme="dark"] .sidebar { background: #0a0c12; }
+[data-theme="dark"] .sidebar-nav a:hover,
+[data-theme="dark"] .sidebar-nav a.active { background: #151820; }
+[data-theme="dark"] .dropzone:hover,
+[data-theme="dark"] .dropzone.over { background: var(--accent-light); }
+[data-theme="dark"] .modal { background: var(--card); }
+[data-theme="dark"] .schema-row:hover,
+[data-theme="dark"] .profile-row:hover { background: #1e2130; }
+[data-theme="dark"] input, [data-theme="dark"] select, [data-theme="dark"] textarea {
+  background: var(--card); color: var(--text); border-color: var(--border);
+}
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif;
        background: var(--bg); color: var(--text); line-height: 1.55; font-size: 14px; }
@@ -271,7 +299,8 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans
     </div>
   </nav>
 
-  <div class="main">
+  <div class="main" style="position:relative;">
+    <button onclick="toggleTheme()" id="theme-toggle" style="position:absolute;top:8px;right:8px;background:none;border:1px solid var(--border);border-radius:6px;padding:4px 8px;cursor:pointer;font-size:14px;color:var(--text2);z-index:10;" title="Toggle dark/light mode">🌙</button>
     <!-- ═══ UPLOAD PAGE ═══ -->
     <div class="page active" id="page-upload">
       <h1>Upload Data</h1>
@@ -1491,6 +1520,25 @@ function searchImportFile(input) {
 
 const _origShowPage = showPage;
 showPage = function(name) { _origShowPage(name); if (name === 'search') { loadSearchList(); loadSearchDatasets(); loadGlobalRules(); } };
+
+// Theme toggle
+function toggleTheme() {
+  const html = document.documentElement;
+  const current = html.getAttribute('data-theme');
+  const next = current === 'dark' ? 'light' : 'dark';
+  html.setAttribute('data-theme', next);
+  localStorage.setItem('theme', next);
+  document.getElementById('theme-toggle').textContent = next === 'dark' ? '☀️' : '🌙';
+}
+// Apply saved theme on load
+(function() {
+  const saved = localStorage.getItem('theme') || 'light';
+  if (saved === 'dark') {
+    document.documentElement.setAttribute('data-theme', 'dark');
+    const btn = document.getElementById('theme-toggle');
+    if (btn) btn.textContent = '☀️';
+  }
+})();
 
 // Init
 initApp();
