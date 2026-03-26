@@ -998,7 +998,7 @@ async function loadDatasets() {
         <div class="ds-info" onclick="loadDatasetDetail('${d.id}')" style="cursor:pointer;">
           <div class="ds-name">${d.name}</div>
           <div class="ds-meta">${d.profiles} profiles &middot; ${d.created_at ? new Date(d.created_at).toLocaleDateString() : ''}</div>
-          <div class="ds-fields">${(d.searchable_fields||[]).map(f=>'<span class="ds-field-tag">'+f+'</span>').join('')}</div>
+          <div class="ds-fields">${(typeof d.searchable_fields==='string'?JSON.parse(d.searchable_fields||'[]'):d.searchable_fields||[]).map(f=>'<span class="ds-field-tag">'+f+'</span>').join('')}</div>
         </div>
         <div class="ds-actions">
           <button class="btn btn-ghost" style="color:var(--red);font-size:12px;" onclick="event.stopPropagation();deleteDataset('${d.id}','${(d.name||'').replace(/'/g,"\\'")}')">Delete</button>
