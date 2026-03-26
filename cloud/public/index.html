@@ -298,12 +298,11 @@ window.APP_MODE = 'cloud';
       </a>
     </div>
     <!-- Account indicator -->
-    <div class="sidebar-account">
+    <div class="sidebar-account" id="sidebar-account">
       <div class="sidebar-account-name" id="account-name-display"></div>
-      <a class="sidebar-account-logout" onclick="doLogout()">Sign out</a>
+      <a class="sidebar-account-logout" onclick="doLogout()" id="sidebar-logout">Sign out</a>
     </div>
-    <div style="padding:12px 20px;border-top:1px solid #1f2937;font-size:11px;color:#6b7280;line-height:1.4;">
-      Your data is stored securely in your account. External API calls only happen when you run enrichment.
+    <div style="padding:12px 20px;border-top:1px solid #1f2937;font-size:11px;color:#6b7280;line-height:1.4;" id="sidebar-privacy">
     </div>
   </nav>
 
@@ -693,6 +692,14 @@ async function doLogout() {
 
 // Check if we already have a valid session on page load
 async function checkSession() {
+  // Set mode-specific UI
+  if (window.APP_MODE === 'local') {
+    document.getElementById('sidebar-logout').style.display = 'none';
+    document.getElementById('sidebar-privacy').textContent = 'Runs entirely on your machine. Your data never leaves your computer except for API calls you approve.';
+  } else {
+    document.getElementById('sidebar-privacy').textContent = 'Your data is stored securely in your account. External API calls only happen when you run enrichment.';
+  }
+
   if (window.APP_MODE === 'local') {
     // No auth in local mode — go straight to app
     document.getElementById('login-page').style.display = 'none';
