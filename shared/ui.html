@@ -1415,10 +1415,13 @@ async function initApp() {
     renderKeyFields('keyFields', keys);
 
     const ds = await (await apiFetch('/api/datasets')).json();
-    const hasAnyKey = KEY_DEFS.some(k => keys[k.id]);
-    if (!hasAnyKey && ds.length === 0) {
-      renderKeyFields('onboardingKeys', keys);
-      document.getElementById('onboardingModal').style.display = 'flex';
+    // Only show onboarding in local mode when no keys are configured
+    if (window.APP_MODE === 'local') {
+      const hasAnyKey = KEY_DEFS.some(k => keys[k.id]);
+      if (!hasAnyKey && ds.length === 0) {
+        renderKeyFields('onboardingKeys', keys);
+        document.getElementById('onboardingModal').style.display = 'flex';
+      }
     }
 
     loadDatasets();
