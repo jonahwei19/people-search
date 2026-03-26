@@ -759,7 +759,7 @@ async function handleFile(f) {
   showLoading('Detecting schema...');
   const fd = new FormData(); fd.append('file', f);
   try {
-    const r = await apiFetch('/api/detect-schema', {method:'POST', body:fd});
+    const r = await apiFetch('/api/detect_schema', {method:'POST', body:fd});
     const d = await r.json();
     hideLoading();
     if (d.error) { alert(d.error); return; }
@@ -938,7 +938,7 @@ async function cancelEnrich() {
 async function skipEnrich() {
   goStep(3);
   document.getElementById('progressLabel').textContent = 'Building profile cards (no enrichment)...';
-  const r = await apiFetch('/api/embed-only', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({dataset_id:datasetId})});
+  const r = await apiFetch('/api/embed_only', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({dataset_id:datasetId})});
   const d = await r.json();
   if (d.error) { alert(d.error); return; }
   currentPollJobId = d.job_id;
@@ -1206,7 +1206,7 @@ async function reenrichDataset(id) {
 
   showLoading('Estimating cost...');
   try {
-    const r = await apiFetch('/api/reenrich-estimate', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({dataset_id:id})});
+    const r = await apiFetch('/api/reenrich_estimate', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({dataset_id:id})});
     const d = await r.json();
     hideLoading();
     if (d.error) { alert(d.error); return; }
