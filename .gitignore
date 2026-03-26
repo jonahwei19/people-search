@@ -13,3 +13,4 @@ archive/
 tls_applicants.csv
 node_modules/
 .vercel/
+.vercel

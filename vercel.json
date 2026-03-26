@@ -1,0 +1,10 @@
+{
+  "functions": {
+    "api/**/*.py": {
+      "maxDuration": 300
+    }
+  },
+  "rewrites": [
+    { "source": "/", "destination": "/cloud/public/index.html" }
+  ]
+}
