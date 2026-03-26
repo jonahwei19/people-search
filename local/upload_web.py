@@ -273,6 +273,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans
 </style>
 </head>
 <body>
+<button id="theme-toggle" style="position:fixed;top:12px;right:16px;background:var(--card);border:1px solid var(--border);border-radius:8px;padding:6px 10px;cursor:pointer;font-size:12px;font-weight:500;color:var(--text2);z-index:9999;box-shadow:var(--shadow);">Dark</button>
 <div class="shell">
   <nav class="sidebar">
     <div class="sidebar-brand">People <span>Search</span></div>
@@ -299,8 +300,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans
     </div>
   </nav>
 
-  <div class="main" style="position:relative;">
-    <button onclick="toggleTheme()" id="theme-toggle" style="position:absolute;top:8px;right:8px;background:none;border:1px solid var(--border);border-radius:6px;padding:4px 8px;cursor:pointer;font-size:14px;color:var(--text2);z-index:10;" title="Toggle dark/light mode">🌙</button>
+  <div class="main">
     <!-- ═══ UPLOAD PAGE ═══ -->
     <div class="page active" id="page-upload">
       <h1>Upload Data</h1>
@@ -1386,20 +1386,18 @@ async function searchShowResults(id, sd) {
 }
 
 async function sExclude(profileId) {
-  await fetch(\`/api/search/searches/\${sId}/exclude\`, {
+  await fetch('/api/search/searches/' + sId + '/exclude', {
     method: 'POST', headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({profile_id: profileId})
   });
-  // Remove the card from the DOM
   loadSearchResults(sId);
 }
 
 async function sShowExcluded() {
-  // Temporarily unexclude all and reload
-  const s = await (await fetch(\`/api/search/searches/\${sId}\`)).json();
+  const s = await (await fetch('/api/search/searches/' + sId)).json();
   const excluded = s.excluded_profile_ids || [];
   for (const pid of excluded) {
-    await fetch(\`/api/search/searches/\${sId}/unexclude\`, {
+    await fetch('/api/search/searches/' + sId + '/unexclude', {
       method: 'POST', headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({profile_id: pid})
     });
@@ -1522,23 +1520,16 @@ const _origShowPage = showPage;
 showPage = function(name) { _origShowPage(name); if (name === 'search') { loadSearchList(); loadSearchDatasets(); loadGlobalRules(); } };
 
 // Theme toggle
-function toggleTheme() {
-  const html = document.documentElement;
-  const current = html.getAttribute('data-theme');
-  const next = current === 'dark' ? 'light' : 'dark';
-  html.setAttribute('data-theme', next);
-  localStorage.setItem('theme', next);
-  document.getElementById('theme-toggle').textContent = next === 'dark' ? '☀️' : '🌙';
+document.getElementById('theme-toggle').addEventListener('click', function() {
+  var t = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', t);
+  localStorage.setItem('theme', t);
+  this.textContent = t === 'dark' ? 'Light' : 'Dark';
+});
+if (localStorage.getItem('theme') === 'dark') {
+  document.documentElement.setAttribute('data-theme', 'dark');
+  document.getElementById('theme-toggle').textContent = 'Light';
 }
-// Apply saved theme on load
-(function() {
-  const saved = localStorage.getItem('theme') || 'light';
-  if (saved === 'dark') {
-    document.documentElement.setAttribute('data-theme', 'dark');
-    const btn = document.getElementById('theme-toggle');
-    if (btn) btn.textContent = '☀️';
-  }
-})();
 
 // Init
 initApp();
