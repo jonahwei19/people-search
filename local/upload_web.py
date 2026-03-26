@@ -194,6 +194,16 @@ def api_prepare():
             confidence=m.get("confidence", 0.5),
         ) for m in raw_mappings]
 
+        # Support appending to existing dataset (for chunked uploads)
+        append_to = data.get("append_to") if request.is_json else None
+        if append_to:
+            existing = PIPELINE.load(append_to)
+            chunk_ds, _ = PIPELINE.prepare(filepath, fmaps, name=name)
+            existing.profiles.extend(chunk_ds.profiles)
+            existing.total_rows += chunk_ds.total_rows
+            PIPELINE.save(existing)
+            return jsonify({"dataset_id": append_to, "appended": len(chunk_ds.profiles)})
+
         dataset, cost = PIPELINE.prepare(filepath, fmaps, name=name)
         PIPELINE.save(dataset)
 

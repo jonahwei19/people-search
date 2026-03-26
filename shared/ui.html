@@ -920,18 +920,65 @@ function renderSchema(maps) {
 async function confirmSchema() {
   showLoading('Preparing dataset...');
   try {
-    // Send file content as JSON to bypass Vercel 4.5MB upload limit
-    const r = await apiFetch('/api/prepare', {
+    // Chunk large files: split into batches of ~500 rows to stay under 4.5MB
+    var lines, header, chunks;
+    if (file.name.endsWith('.csv')) {
+      lines = fileContent.split('\n');
+      header = lines[0];
+      var dataLines = lines.slice(1).filter(function(l) { return l.trim(); });
+      var CHUNK_SIZE = 500;
+      chunks = [];
+      for (var ci = 0; ci < dataLines.length; ci += CHUNK_SIZE) {
+        chunks.push(header + '\n' + dataLines.slice(ci, ci + CHUNK_SIZE).join('\n'));
+      }
+    } else {
+      chunks = [fileContent]; // JSON files sent whole
+    }
+
+    // Send first chunk to create the dataset
+    showLoading('Preparing dataset (chunk 1/' + chunks.length + ')...');
+    var r = await apiFetch('/api/prepare', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({
         filename: file.name,
-        content: fileContent,
+        content: chunks[0],
         mappings: mappings,
         name: document.getElementById('dsName').value,
       }),
     });
-    const d = await r.json();
+    var d = await r.json();
+
+    // Send remaining chunks to append to the dataset
+    if (chunks.length > 1 && d.dataset_id) {
+      for (var ci = 1; ci < chunks.length; ci++) {
+        showLoading('Preparing dataset (chunk ' + (ci+1) + '/' + chunks.length + ')...');
+        await apiFetch('/api/prepare', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({
+            filename: file.name,
+            content: chunks[ci],
+            mappings: mappings,
+            name: document.getElementById('dsName').value,
+            append_to: d.dataset_id,
+          }),
+        });
+      }
+      // Re-fetch stats after all chunks
+      r = await apiFetch('/api/dataset/' + d.dataset_id);
+      var ds = await r.json();
+      d.stats = {
+        total: ds.profiles ? ds.profiles.length : d.stats.total,
+        have_linkedin: d.stats.have_linkedin,
+        email_only: d.stats.email_only,
+        content_fields: d.stats.content_fields,
+        content_field_names: d.stats.content_field_names,
+        skipped_rows: d.stats.skipped_rows || 0,
+        duplicates: d.stats.duplicates || 0,
+      };
+    }
+
     hideLoading();
     if (d.error) { alert(d.error); return; }
     datasetId = d.dataset_id;
@@ -1657,7 +1704,7 @@ async function searchShowResults(id, sd) {
         <button class="btn sm" onclick="sRate('${r.id}',\`${(r.name||'').replace(/`/g,'')}\`,'strong_no',this)">\u2717\u2717</button>
         <button class="btn sm" onclick="sExclude('${r.id}')" title="Remove from results (not negative feedback)" style="margin-left:4px;opacity:0.5;">\u25CB</button>
         <input type="text" placeholder="Why?" style="flex:1;padding:4px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px;" id="sr-${r.id}">
-        <label style="font-size:10px;color:var(--text3);white-space:nowrap;cursor:pointer;" title="Check this if your feedback applies to ALL searches, not just this one."><input type="checkbox" id="sg-${r.id}"> global</label>
+        <label style="font-size:10px;color:var(--text3);white-space:nowrap;cursor:pointer;" title="Check this if your feedback applies to ALL searches, not just this one. Global feedback becomes a permanent rule like: 'When anyone says Republican, they mean passes PPO vetting.' Only check for things that are always true, not preferences specific to this search."><input type="checkbox" id="sg-${r.id}"> global <span style="display:inline-block;width:11px;height:11px;border-radius:50%;background:var(--border);text-align:center;font-size:8px;line-height:11px;color:var(--text2);cursor:help;">i</span></label>
       </div>
     </div>`).join('');
   if (excludedCount > 0) {

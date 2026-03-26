@@ -56,10 +56,22 @@ class handler(BaseHTTPRequestHandler):
             ]
 
             pipeline = get_pipeline(account["account_id"])
-            dataset, cost = pipeline.prepare(filepath, fmaps, name=name)
-
-            # Save to Supabase
             storage = get_storage(account["account_id"])
+
+            # Support appending to existing dataset (for chunked uploads)
+            append_to = body.get("append_to") if "application/json" in content_type else None
+            if append_to:
+                existing = storage.load_dataset(append_to)
+                chunk_ds, _ = pipeline.prepare(filepath, fmaps, name=name)
+                existing.profiles.extend(chunk_ds.profiles)
+                existing.total_rows += chunk_ds.total_rows
+                storage.save_dataset(existing)
+                storage.save_profiles(append_to, chunk_ds.profiles)
+                json_response(self, 200, {"dataset_id": append_to, "appended": len(chunk_ds.profiles)})
+                filepath.unlink(missing_ok=True)
+                return
+
+            dataset, cost = pipeline.prepare(filepath, fmaps, name=name)
             storage.save_dataset(dataset)
 
             have_li = sum(1 for p in dataset.profiles if is_valid_linkedin_url(p.linkedin_url))
