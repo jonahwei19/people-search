@@ -195,14 +195,22 @@ def api_prepare():
         ) for m in raw_mappings]
 
         # Support appending to existing dataset (for chunked uploads)
+        # Lightweight: just parse rows into profiles, skip dedup/cost
         append_to = data.get("append_to") if request.is_json else None
         if append_to:
             existing = PIPELINE.load(append_to)
-            chunk_ds, _ = PIPELINE.prepare(filepath, fmaps, name=name)
-            existing.profiles.extend(chunk_ds.profiles)
-            existing.total_rows += chunk_ds.total_rows
+            rows = PIPELINE._load_rows(filepath)
+            new_profiles = []
+            for i, row in enumerate(rows):
+                p = PIPELINE._row_to_profile(row, fmaps, len(existing.profiles) + i)
+                has_identity = p.name or p.email or p.linkedin_url
+                has_content = any(v.strip() for v in p.content_fields.values()) if p.content_fields else False
+                if has_identity or has_content:
+                    new_profiles.append(p)
+            existing.profiles.extend(new_profiles)
+            existing.total_rows += len(rows)
             PIPELINE.save(existing)
-            return jsonify({"dataset_id": append_to, "appended": len(chunk_ds.profiles)})
+            return jsonify({"dataset_id": append_to, "appended": len(new_profiles)})
 
         dataset, cost = PIPELINE.prepare(filepath, fmaps, name=name)
         PIPELINE.save(dataset)

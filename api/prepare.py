@@ -59,15 +59,19 @@ class handler(BaseHTTPRequestHandler):
             storage = get_storage(account["account_id"])
 
             # Support appending to existing dataset (for chunked uploads)
+            # Lightweight: just parse rows into profiles, skip dedup/cost
             append_to = body.get("append_to") if "application/json" in content_type else None
             if append_to:
-                existing = storage.load_dataset(append_to)
-                chunk_ds, _ = pipeline.prepare(filepath, fmaps, name=name)
-                existing.profiles.extend(chunk_ds.profiles)
-                existing.total_rows += chunk_ds.total_rows
-                storage.save_dataset(existing)
-                storage.save_profiles(append_to, chunk_ds.profiles)
-                json_response(self, 200, {"dataset_id": append_to, "appended": len(chunk_ds.profiles)})
+                rows = pipeline._load_rows(filepath)
+                new_profiles = []
+                for i, row in enumerate(rows):
+                    p = pipeline._row_to_profile(row, fmaps, i)
+                    has_identity = p.name or p.email or p.linkedin_url
+                    has_content = any(v.strip() for v in p.content_fields.values()) if p.content_fields else False
+                    if has_identity or has_content:
+                        new_profiles.append(p)
+                storage.save_profiles(append_to, new_profiles)
+                json_response(self, 200, {"dataset_id": append_to, "appended": len(new_profiles)})
                 filepath.unlink(missing_ok=True)
                 return
 
