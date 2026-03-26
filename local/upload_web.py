@@ -457,7 +457,8 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans
       <div id="search-results" style="display:none;">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
           <div style="font-size:13px;color:var(--text2);" id="search-results-header"></div>
-          <div style="display:flex;gap:8px;">
+          <div style="display:flex;gap:8px;align-items:center;">
+            <select id="search-dataset-results" style="padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12px;" onchange="switchSearchDataset()"><option value="">All datasets</option></select>
             <button class="btn" onclick="searchRerun()" id="btn-rerun">Re-run with feedback</button>
             <button class="btn" onclick="searchBackToPicker()">Back</button>
           </div>
@@ -971,18 +972,31 @@ async function setLinkedin(profileId) {
     alert('Please paste a valid LinkedIn URL (must contain linkedin.com/in/)');
     return;
   }
+  // Show loading state
+  const btn = event.target;
+  const origText = btn.textContent;
+  btn.textContent = 'Enriching...';
+  btn.disabled = true;
   input.disabled = true;
-  const r = await fetch('/api/profile/' + profileId + '/linkedin', {
-    method: 'POST', headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({linkedin_url: url})
-  });
-  const d = await r.json();
-  input.disabled = false;
-  if (d.error) { alert(d.error); return; }
-  // Refresh the profile modal
-  if (d.profile) {
-    window._dsProfiles = [d.profile];
-    showProfile(0);
+  btn.style.opacity = '0.6';
+
+  try {
+    const r = await fetch('/api/profile/' + profileId + '/linkedin', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({linkedin_url: url})
+    });
+    const d = await r.json();
+    if (d.error) { alert(d.error); return; }
+    // Refresh the profile modal
+    if (d.profile) {
+      window._dsProfiles = [d.profile];
+      showProfile(0);
+    }
+  } finally {
+    btn.textContent = origText;
+    btn.disabled = false;
+    input.disabled = false;
+    btn.style.opacity = '';
   }
 }
 
@@ -1181,8 +1195,17 @@ async function loadSearchList() {
 
 async function loadSearchDatasets() {
   const {datasets} = await (await fetch('/api/search/datasets')).json();
+  const opts = '<option value="">All datasets</option>' + datasets.map(d => `<option value="${d.id}">${d.name} (${d.profiles})</option>`).join('');
   const sel = document.getElementById('search-dataset');
-  if (sel) sel.innerHTML = '<option value="">All datasets</option>' + datasets.map(d => `<option value="${d.id}">${d.name} (${d.profiles})</option>`).join('');
+  if (sel) sel.innerHTML = opts;
+  const sel2 = document.getElementById('search-dataset-results');
+  if (sel2) sel2.innerHTML = opts;
+}
+
+function switchSearchDataset() {
+  // Re-run the current search with the newly selected dataset
+  if (!sId) return;
+  searchRerun();
 }
 
 function searchNewFlow() {
@@ -1282,7 +1305,7 @@ function searchSkipToScore() {
 async function searchRun(clarification) {
   const name = document.getElementById('search-name').value.trim() || 'Untitled';
   const query = sChatQuery || document.getElementById('search-query')?.value?.trim() || '';
-  const dataset_id = document.getElementById('search-dataset')?.value || undefined;
+  const dataset_id = document.getElementById('search-dataset-results')?.value || document.getElementById('search-dataset')?.value || undefined;
   if (!query) { alert('No query found'); sShow('new'); return; }
   sShow('progress'); document.getElementById('search-progress-fill').style.width = '0%';
   const data = await (await fetch('/api/search/score', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({name, query, search_id:sId, dataset_id, clarification_context:clarification})})).json();
