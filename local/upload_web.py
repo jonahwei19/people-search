@@ -1743,6 +1743,9 @@ def api_profile(profile_id):
 @app.route("/api/profile/<profile_id>/linkedin", methods=["POST"])
 def api_profile_linkedin(profile_id):
     """Update a profile's LinkedIn URL. Optionally re-enriches."""
+    from enrichment.models import EnrichmentStatus
+    from enrichment.enrichers import normalize_linkedin_url
+
     data = request.json or {}
     new_url = data.get("linkedin_url", "").strip()
 
@@ -1767,7 +1770,6 @@ def api_profile_linkedin(profile_id):
                 p.enrichment_log.append(f"LinkedIn manually set to: {new_url}")
 
                 # Enrich via EnrichLayer (skip verification — user provided this URL)
-                from enrichment.enrichers import normalize_linkedin_url
                 url = normalize_linkedin_url(new_url)
                 api_data = PIPELINE.enricher._call_api(url)
 
