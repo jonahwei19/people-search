@@ -49,6 +49,12 @@ def build_system_prompt(
         for ex in sorted(search.exemplars, key=lambda e: -e.score):
             parts.append(f"Score {ex.score}: {ex.profile_name} — {ex.profile_summary[:200]} — \"{ex.reason}\"")
 
+    # Prompt corrections from user-edited reasoning
+    if search.prompt_corrections:
+        parts.append("\nCORRECTIONS (from user feedback — follow these strictly):")
+        for correction in search.prompt_corrections:
+            parts.append(f"- {correction}")
+
     parts.append("""
 Score each candidate 0-100. Return a JSON array, one entry per candidate:
 [{"id": "profile_id", "s": N, "r": "brief reason"}]

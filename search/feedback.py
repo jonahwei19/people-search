@@ -122,6 +122,77 @@ def apply_synthesis(search: DefinedSearch, proposal: dict, profiles: list[Profil
         ))
 
 
+CLASSIFY_FEEDBACK_SYSTEM = """Classify this feedback event into exactly one category.
+
+Categories:
+- "profile": The feedback is about THIS SPECIFIC PERSON being wrong/right for the search (e.g., "too academic", "great operator", "wrong field")
+- "scoring": The feedback is about the JUDGE'S REASONING being wrong (e.g., user corrected "strong builder" to "no evidence of shipping" — the judge misread the profile)
+- "global": The feedback applies to ALL searches, not just this one (e.g., "founders of high-growth startups are locked-in" is always true)
+
+Also extract the key signal — the specific, concrete thing that makes this profile good or bad.
+
+Respond as JSON:
+{"category": "profile|scoring|global", "key_signal": "one specific concrete signal", "prompt_correction": "if scoring category: CORRECTION: When you see X, do Y instead of Z"}"""
+
+
+def classify_feedback(
+    search: DefinedSearch,
+    event: FeedbackEvent,
+    profile: Optional[Profile] = None,
+) -> dict:
+    """Classify a feedback event and extract the key signal."""
+    parts = [
+        f"SEARCH: {search.name}",
+        f"QUERY: {search.query}",
+        f"RATING: {event.rating} on {event.profile_name}",
+    ]
+    if event.reason:
+        parts.append(f"REASON: {event.reason}")
+    if event.reasoning_correction:
+        parts.append(f"USER CORRECTED REASONING FROM: (judge said something) TO: {event.reasoning_correction}")
+    if profile:
+        parts.append(f"PROFILE:\n{profile.raw_text[:400]}")
+    # Include judge's score/reasoning if available
+    if search.cache.scores and event.profile_id in search.cache.scores:
+        sr = search.cache.scores[event.profile_id]
+        parts.append(f"JUDGE SCORED: {sr.score}, JUDGE SAID: {sr.reasoning}")
+
+    try:
+        return call_gemini_json(CLASSIFY_FEEDBACK_SYSTEM, "\n".join(parts))
+    except Exception:
+        return {"category": "profile", "key_signal": event.reason or "unknown", "prompt_correction": ""}
+
+
+EXTRACT_POSITIVE_SYSTEM = """The user marked this candidate as excellent for their search.
+Look at the profile and identify the KEY DISTINGUISHING FEATURES that make this person stand out.
+Be specific — name concrete signals (titles, companies, projects, skills) not vague qualities.
+
+Respond as JSON:
+{"key_features": ["feature 1", "feature 2"], "summary": "one sentence: why this person is great for this search"}"""
+
+
+def extract_positive_signal(
+    search: DefinedSearch,
+    profile: Profile,
+) -> dict:
+    """Extract what makes a positively-rated profile good for this search."""
+    parts = [
+        f"SEARCH: {search.name}",
+        f"QUERY: {search.query}",
+        f"EXCELLENT CANDIDATE: {profile.identity.name or 'Unknown'}",
+        f"PROFILE:\n{profile.raw_text[:500]}",
+    ]
+    if search.search_rules:
+        parts.append("SEARCH RULES:")
+        for r in search.search_rules:
+            parts.append(f"- {r}")
+
+    try:
+        return call_gemini_json(EXTRACT_POSITIVE_SYSTEM, "\n".join(parts))
+    except Exception:
+        return {"key_features": [], "summary": "Marked as excellent by user"}
+
+
 INFER_REASON_SYSTEM = """The user rejected this candidate for a search but didn't say why.
 Based on the search query and the candidate's profile, infer the most likely reason in ONE sentence (max 15 words).
 Focus on the GAP — what's missing or wrong, not what's there.

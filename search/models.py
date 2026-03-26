@@ -129,6 +129,10 @@ class DefinedSearch(BaseModel):
     # Profiles hidden from results (not negative feedback — just removed from view)
     excluded_profile_ids: list[str] = Field(default_factory=list)
 
+    # Prompt corrections from user-edited reasoning (Feature 3)
+    # Format: ["CORRECTION: When you see X, do Y instead of Z", ...]
+    prompt_corrections: list[str] = Field(default_factory=list)
+
     def compute_prompt_hash(self, global_rules: list[GlobalRule]) -> str:
         """Hash of everything that affects scoring — used for cache invalidation."""
         relevant_globals = [r.text for r in global_rules if r.id in self.applicable_global_rule_ids]
@@ -138,6 +142,7 @@ class DefinedSearch(BaseModel):
             "search_rules": self.search_rules,
             "exemplars": [e.model_dump(mode="json") for e in self.exemplars],
             "global_rules": relevant_globals,
+            "prompt_corrections": self.prompt_corrections,
         }, sort_keys=True)
         return hashlib.sha256(content.encode()).hexdigest()[:16]
 

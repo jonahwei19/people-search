@@ -16,11 +16,16 @@ from pathlib import Path
 
 from flask import Blueprint, jsonify, request
 
-from search.feedback import apply_synthesis, propose_global_rule, synthesize_rules, infer_rejection_reason, create_negative_exemplar
+from search.feedback import (
+    apply_synthesis, propose_global_rule, synthesize_rules,
+    infer_rejection_reason, create_negative_exemplar,
+    classify_feedback, extract_positive_signal,
+)
 from search.global_filter import filter_global_rules
 from search.llm_judge import rank_results, score_profiles_sync
 from search.models import (
     DefinedSearch,
+    Exemplar,
     FeedbackEvent,
     GlobalRule,
     GlobalRules,
@@ -28,6 +33,7 @@ from search.models import (
     ProfileIdentity,
     ScoreResult,
 )
+from search.feedback import MAX_EXEMPLARS
 from search.questioner import conversation_to_context, next_question
 
 search_bp = Blueprint("search", __name__)
@@ -260,12 +266,44 @@ def submit_feedback():
     )
     s.feedback_log.append(event)
 
-    # Create negative exemplar for strong rejections
-    if rating == "strong_no":
-        profiles = _get_v2_profiles()
-        profile = next((p for p in profiles if p.id == profile_id), None)
-        if profile:
+    profiles = _get_v2_profiles()
+    profile = next((p for p in profiles if p.id == profile_id), None)
+
+    # Classify the feedback and extract signals
+    classification = None
+    if profile:
+        try:
+            classification = classify_feedback(s, event, profile)
+        except Exception:
+            classification = {"category": "profile", "key_signal": reason or "unknown"}
+
+        # Handle based on classification
+        if rating == "strong_no":
             create_negative_exemplar(s, profile, reason)
+
+        if rating == "strong_yes":
+            # Extract what makes this profile great → positive exemplar
+            try:
+                positive = extract_positive_signal(s, profile)
+                exemplar_reason = positive.get("summary", reason or "Marked as excellent")
+            except Exception:
+                exemplar_reason = reason or "Marked as excellent"
+            # Remove existing exemplar for this profile
+            s.exemplars = [ex for ex in s.exemplars if ex.profile_id != profile_id]
+            if len(s.exemplars) < MAX_EXEMPLARS:
+                s.exemplars.append(Exemplar(
+                    profile_id=profile_id,
+                    profile_name=event.profile_name,
+                    profile_summary=profile.raw_text[:300],
+                    score=95,
+                    reason=exemplar_reason,
+                ))
+
+        # If user corrected the judge's reasoning → create prompt correction
+        if event.reasoning_correction and classification and classification.get("prompt_correction"):
+            correction = classification["prompt_correction"]
+            if correction and correction not in s.prompt_corrections:
+                s.prompt_corrections.append(correction)
 
     # If global scope, propose a global rule
     global_proposal = None
@@ -280,6 +318,7 @@ def submit_feedback():
         "status": "ok",
         "global_proposal": global_proposal,
         "inferred_reason": inferred,
+        "classification": classification,
     })
 
 
