@@ -65,7 +65,7 @@ class LinkedInEnricher:
         self.api_key = api_key or os.environ.get("ENRICHLAYER_API_KEY", "")
         self.rate_limit = rate_limit
         self.batch_size = batch_size
-        self._cost_per_call = 0.10
+        self._cost_per_call = 0.0168
 
     def enrich_profile(self, profile: Profile) -> EnrichmentResult:
         """Enrich a single profile's LinkedIn data, then verify the match.

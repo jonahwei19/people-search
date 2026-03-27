@@ -2,7 +2,7 @@
 
 Shows the user what enrichment will cost before running it.
 Enrichment providers and their per-call costs:
-- EnrichLayer LinkedIn: $0.10 per profile
+- EnrichLayer LinkedIn: $0.0168 per profile
 - Identity resolution (web search): ~$0.005 per lookup (Brave API, ~5 queries each)
 - Profile card generation: free (local)
 """
@@ -16,7 +16,7 @@ from dataclasses import dataclass
 class CostBreakdown:
     """Itemized cost estimate for an enrichment run."""
     linkedin_enrichments: int = 0
-    linkedin_cost_per: float = 0.10
+    linkedin_cost_per: float = 0.0168
     identity_lookups: int = 0
     identity_cost_per: float = 0.005
     embedding_profiles: int = 0
