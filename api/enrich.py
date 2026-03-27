@@ -16,7 +16,7 @@ from api._helpers import (
 )
 from enrichment.models import EnrichmentStatus
 
-CHUNK_SIZE = 10  # profiles per invocation
+CHUNK_SIZE = 50  # profiles per invocation (parallel within chunk)
 
 
 class handler(BaseHTTPRequestHandler):
@@ -78,14 +78,14 @@ class handler(BaseHTTPRequestHandler):
         chunk = pending[:CHUNK_SIZE]
 
         try:
-            # Resolve identities (email → LinkedIn URL)
-            pipeline.resolver.resolve_batch(chunk)
+            # Resolve identities (email → LinkedIn URL) — 20 parallel workers
+            pipeline.resolver.resolve_batch(chunk, max_workers=20)
 
-            # Enrich LinkedIn profiles
-            pipeline.enricher.enrich_batch(chunk)
+            # Enrich LinkedIn profiles — 20 parallel workers
+            pipeline.enricher.enrich_batch(chunk, max_workers=20)
 
-            # Save updated profiles
-            storage.save_profiles(dataset.id, dataset.profiles)
+            # Save only the chunk we just processed (not all profiles)
+            storage.save_profiles(dataset.id, chunk)
 
             done_count = sum(
                 1 for p in dataset.profiles
