@@ -38,27 +38,37 @@ class handler(BaseHTTPRequestHandler):
         pipeline = get_pipeline(aid)
 
         try:
-            dataset = storage.load_dataset(dataset_id)
-        except Exception:
-            json_response(self, 404, {"error": "Dataset not found"})
-            return
+            # Only count total (lightweight query) — don't load all profiles
+            all_count = storage.client.table("profiles").select("id", count="exact").eq("dataset_id", dataset_id).eq("account_id", aid).execute()
+            total = all_count.count or 0
 
-        total = len(dataset.profiles)
+            # Load ONLY pending profiles (not the full dataset)
+            pending_resp = (
+                storage.client.table("profiles")
+                .select("*")
+                .eq("dataset_id", dataset_id)
+                .eq("account_id", aid)
+                .eq("enrichment_status", "pending")
+                .limit(CHUNK_SIZE)
+                .execute()
+            )
+            pending = [storage._row_to_profile(r) for r in pending_resp.data]
+        except Exception as e:
+            json_response(self, 404, {"error": f"Dataset not found: {e}"})
+            return
 
         # Create or resume job
         if not job_id:
             job_id = storage.create_job(dataset_id, total)
 
-        pending = [p for p in dataset.profiles if p.enrichment_status == EnrichmentStatus.PENDING]
-
         # All profiles processed — do final steps
         if not pending:
             try:
-                # Fetch links for profiles that have them
-                pipeline.fetch_links(dataset)
-                # Build profile cards
+                # Load full dataset for final processing (only runs once)
+                dataset = storage.load_dataset(dataset_id)
+                # Build profile cards (skip link fetching to reduce I/O)
                 pipeline.build_profile_cards(dataset)
-                storage.save_dataset(dataset)
+                storage.save_profiles(dataset_id, dataset.profiles)
                 storage.update_job(job_id, status="done", current_count=total,
                                    message="Done")
             except Exception as e:
@@ -74,8 +84,8 @@ class handler(BaseHTTPRequestHandler):
             })
             return
 
-        # Process a chunk of pending profiles
-        chunk = pending[:CHUNK_SIZE]
+        # pending is already limited to CHUNK_SIZE from the query
+        chunk = pending
 
         try:
             # Resolve identities (email → LinkedIn URL) — 20 parallel workers
@@ -84,13 +94,17 @@ class handler(BaseHTTPRequestHandler):
             # Enrich LinkedIn profiles — 20 parallel workers
             pipeline.enricher.enrich_batch(chunk, max_workers=20)
 
-            # Save only the chunk we just processed (not all profiles)
-            storage.save_profiles(dataset.id, chunk)
+            # Trim enrichment logs before saving (reduces I/O)
+            for p in chunk:
+                if len(p.enrichment_log) > 20:
+                    p.enrichment_log = p.enrichment_log[:5] + ["... truncated ..."] + p.enrichment_log[-5:]
 
-            done_count = sum(
-                1 for p in dataset.profiles
-                if p.enrichment_status != EnrichmentStatus.PENDING
-            )
+            # Save only the chunk we just processed
+            storage.save_profiles(dataset_id, chunk)
+
+            # Count done via lightweight query (not loading all profiles)
+            still_pending = storage.client.table("profiles").select("id", count="exact").eq("dataset_id", dataset_id).eq("enrichment_status", "pending").execute()
+            done_count = total - (still_pending.count or 0)
             storage.update_job(
                 job_id,
                 current_count=done_count,
