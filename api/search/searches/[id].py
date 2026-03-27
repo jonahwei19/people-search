@@ -1,4 +1,8 @@
-"""GET /api/search/searches/:id — Get search detail."""
+"""GET /api/search/searches/:id — Get search detail (lightweight).
+
+Returns search metadata without the full cache_scores blob.
+The frontend uses /api/search/searches/:id/results for actual results.
+"""
 
 from http.server import BaseHTTPRequestHandler
 
@@ -13,13 +17,18 @@ class handler(BaseHTTPRequestHandler):
 
         search_id = path_param(self)
         storage = get_storage(account["account_id"])
-        search = storage.load_search(search_id)
+        # Lightweight load — skip cache_scores (frontend uses /results endpoint
+        # and already knows has_results from the list endpoint)
+        search = storage.load_search(search_id, include_scores=False)
 
         if not search:
             json_response(self, 404, {"error": "not found"})
             return
 
-        json_response(self, 200, search.model_dump(mode="json"))
+        data = search.model_dump(mode="json")
+        # Strip cache scores — frontend gets results from /results endpoint
+        data.pop("cache", None)
+        json_response(self, 200, data)
 
     def log_message(self, format, *args):
         pass

@@ -186,11 +186,20 @@ class SupabaseStorage:
         row = self._search_to_row(search)
         self.client.table("searches").upsert(row).execute()
 
-    def load_search(self, search_id: str) -> DefinedSearch | None:
-        """Load a search with its feedback events."""
+    def load_search(self, search_id: str, include_scores: bool = True) -> DefinedSearch | None:
+        """Load a search with its feedback events.
+
+        Args:
+            include_scores: If False, skip loading cache_scores (much faster
+                for large searches). The cache.scores dict will be empty.
+        """
+        if include_scores:
+            select = "*"
+        else:
+            select = "id, name, query, clarification_context, created_at, search_rules, exemplars, applicable_global_rule_ids, cache_prompt_hash"
         response = (
             self.client.table("searches")
-            .select("*")
+            .select(select)
             .eq("id", search_id)
             .eq("account_id", self.account_id)
             .execute()
@@ -198,8 +207,11 @@ class SupabaseStorage:
         if not response.data:
             return None
 
+        row = response.data[0]
+        if not include_scores:
+            row["cache_scores"] = {}
         feedback = self.get_feedback(search_id)
-        return self._row_to_search(response.data[0], feedback)
+        return self._row_to_search(row, feedback)
 
     def list_searches(self) -> list[dict]:
         """List all searches for the account."""

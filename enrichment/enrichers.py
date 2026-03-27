@@ -335,12 +335,47 @@ class LinkedInEnricher:
                 if completed[0] % self.batch_size == 0 and on_batch_save:
                     on_batch_save()
 
-        # Mark profiles without LinkedIn URLs
-        for p in profiles:
-            if p.enrichment_status == EnrichmentStatus.PENDING:
-                if not is_valid_linkedin_url(p.linkedin_url):
-                    p.enrichment_status = EnrichmentStatus.SKIPPED
-                    stats["skipped"] += 1
+        # Handle profiles without valid LinkedIn URLs — their linkedin_url
+        # field might contain a website, Google Drive link, etc. Fetch that
+        # content and move the URL to the right field.
+        from .fetchers import fetch_link
+
+        no_linkedin = [
+            p for p in profiles
+            if p.enrichment_status == EnrichmentStatus.PENDING
+            and not is_valid_linkedin_url(p.linkedin_url)
+        ]
+
+        for p in no_linkedin:
+            url = (p.linkedin_url or "").strip()
+            if url and url.startswith("http"):
+                # Fetch content from whatever URL they put in the LinkedIn field
+                result = fetch_link(url)
+                if result.success:
+                    p.fetched_content[result.source] = result.text
+                    p.enrichment_log.append(
+                        f"Non-LinkedIn URL fetched as {result.source}: {url[:60]}"
+                    )
+                # Move URL to the right field so identity resolution can
+                # still try to find their real LinkedIn
+                url_lower = url.lower()
+                if "drive.google.com" in url_lower or "docs.google.com" in url_lower:
+                    p.resume_url = p.resume_url or url
+                elif "github.com" in url_lower:
+                    if not p.other_links or url not in p.other_links:
+                        p.other_links.append(url)
+                else:
+                    p.website_url = p.website_url or url
+                p.linkedin_url = ""
+
+            # Mark as enriched (we got what we could) rather than skipped
+            if p.fetched_content:
+                p.enrichment_status = EnrichmentStatus.ENRICHED
+                stats["enriched"] += 1
+                p.enrichment_log.append("Enriched from non-LinkedIn URL content")
+            else:
+                p.enrichment_status = EnrichmentStatus.SKIPPED
+                stats["skipped"] += 1
 
         return stats
 

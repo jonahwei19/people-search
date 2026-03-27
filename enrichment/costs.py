@@ -40,15 +40,15 @@ class CostBreakdown:
         lines.append(f"Enrichment cost estimate:")
         lines.append(f"{'─' * 45}")
 
+        if self.identity_lookups:
+            lines.append(
+                f"  Identity resolution: {self.identity_lookups:,} profiles missing LinkedIn "
+                f"× ${self.identity_cost_per:.4f} = ${self.identity_total:.2f}"
+            )
         if self.linkedin_enrichments:
             lines.append(
                 f"  LinkedIn enrichment: {self.linkedin_enrichments:,} profiles "
-                f"× ${self.linkedin_cost_per:.3f} = ${self.linkedin_total:.2f}"
-            )
-        if self.identity_lookups:
-            lines.append(
-                f"  Identity resolution: {self.identity_lookups:,} lookups "
-                f"× ${self.identity_cost_per:.4f} = ${self.identity_total:.2f}"
+                f"× ${self.linkedin_cost_per:.4f} = ${self.linkedin_total:.2f}"
             )
         if self.embedding_profiles:
             lines.append(
@@ -103,12 +103,17 @@ class CostEstimator:
             have_email_only: Profiles with email but no LinkedIn URL
             already_enriched: Profiles already in our database (skip enrichment)
         """
-        # LinkedIn enrichment: profiles with URLs minus already-enriched
-        linkedin_to_enrich = max(0, have_linkedin_url - already_enriched)
-
         # Identity resolution: profiles with email but no LinkedIn URL
         # We'll try to find their LinkedIn via search
         identity_to_resolve = have_email_only
+
+        # LinkedIn enrichment: profiles WITHOUT a URL need identity resolution
+        # first, then enrichment. Profiles that already have a URL and are
+        # already enriched are skipped. Assume ~80% of identity resolutions
+        # will find a LinkedIn profile that then needs enrichment.
+        need_enrichment_with_url = max(0, have_linkedin_url - already_enriched)
+        estimated_identity_hits = int(identity_to_resolve * 0.8)
+        linkedin_to_enrich = need_enrichment_with_url + estimated_identity_hits
 
         return CostBreakdown(
             linkedin_enrichments=linkedin_to_enrich,
