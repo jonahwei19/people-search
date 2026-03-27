@@ -1064,10 +1064,16 @@ async function pollJob(jobId) {
     const lbl = document.getElementById('progressLabel');
 
     if (d.status === 'running') {
-      const p = Math.round((d.current / Math.max(d.total,1)) * 100);
+      var p = Math.round((d.current / Math.max(d.total,1)) * 100);
       fill.style.width = p + '%'; pct.textContent = p + '%';
       lbl.textContent = d.message || 'Enriching...';
-      setTimeout(() => pollJob(jobId), 800);
+      // Trigger next enrichment chunk, then poll again
+      apiFetch('/api/enrich', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({dataset_id:datasetId, job_id:jobId})}).then(function() {
+        setTimeout(function() { pollJob(jobId); }, 500);
+      }).catch(function() {
+        setTimeout(function() { pollJob(jobId); }, 2000);
+      });
+      return;
     } else if (d.status === 'embedding') {
       fill.style.width = '85%'; pct.textContent = '85%';
       lbl.textContent = 'Building profile cards...';
