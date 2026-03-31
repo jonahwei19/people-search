@@ -376,7 +376,23 @@ class SupabaseStorage:
             row["dataset_id"] = dataset_id
         return row
 
+    @staticmethod
+    def _parse_json(val, default=None):
+        """Parse a JSONB value that may be returned as a string."""
+        if default is None:
+            default = {}
+        if val is None:
+            return default
+        if isinstance(val, str):
+            try:
+                import json
+                return json.loads(val)
+            except (json.JSONDecodeError, ValueError):
+                return default
+        return val
+
     def _row_to_profile(self, row: dict) -> Profile:
+        pj = self._parse_json
         return Profile(
             id=row["id"],
             name=row.get("name") or "",
@@ -388,17 +404,17 @@ class SupabaseStorage:
             twitter_url=row.get("twitter_url") or "",
             website_url=row.get("website_url") or "",
             resume_url=row.get("resume_url") or "",
-            other_links=row.get("other_links") or [],
-            linkedin_enriched=row.get("linkedin_enriched") or {},
-            content_fields=row.get("content_fields") or {},
-            metadata=row.get("metadata") or {},
-            fetched_content=row.get("fetched_content") or {},
+            other_links=pj(row.get("other_links"), []),
+            linkedin_enriched=pj(row.get("linkedin_enriched"), {}),
+            content_fields=pj(row.get("content_fields"), {}),
+            metadata=pj(row.get("metadata"), {}),
+            fetched_content=pj(row.get("fetched_content"), {}),
             profile_card=row.get("profile_card") or "",
-            field_summaries=row.get("field_summaries") or {},
+            field_summaries=pj(row.get("field_summaries"), {}),
             enrichment_status=EnrichmentStatus(
                 row.get("enrichment_status", "pending")
             ),
-            enrichment_log=row.get("enrichment_log") or [],
+            enrichment_log=pj(row.get("enrichment_log"), []),
         )
 
     def _search_to_row(self, search: DefinedSearch) -> dict:
