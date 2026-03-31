@@ -27,11 +27,18 @@ from enrichment.pipeline import EnrichmentPipeline
 
 def get_storage(account_id: str) -> SupabaseStorage:
     """Create a SupabaseStorage instance for the given account."""
-    return SupabaseStorage(
+    storage = SupabaseStorage(
         supabase_url=os.environ["SUPABASE_URL"],
         supabase_key=os.environ["SUPABASE_SERVICE_KEY"],
         account_id=account_id,
     )
+    # Load account API keys into environment so Gemini/search modules can find them
+    client = get_supabase_client()
+    keys = get_account_keys(client, account_id)
+    for k, v in keys.items():
+        if v:
+            os.environ[k] = v
+    return storage
 
 
 def get_pipeline(account_id: str) -> EnrichmentPipeline:
