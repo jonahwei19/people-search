@@ -58,32 +58,19 @@ class handler(BaseHTTPRequestHandler):
         except Exception:
             applicable = global_rules
 
-        # Save search first so frontend can track it
-        storage.save_search(search)
-
-        # Score synchronously — frontend polls /api/search/progress/:id
-        # Update job progress as we go
-        job_id = storage.create_job(search.id, len(profiles))
-
+        # Score synchronously
         try:
-            def on_progress(done, total):
-                storage.update_job(job_id, current_count=done,
-                                   message=f"Scoring {done}/{total}")
-
-            scores = score_profiles_sync(search, profiles, applicable, on_progress)
+            scores = score_profiles_sync(search, profiles, applicable)
             search.cache.scores = scores
             search.cache.prompt_hash = search.compute_prompt_hash(global_rules)
             storage.save_search(search)
-            storage.update_job(job_id, status="done", current_count=len(profiles))
 
             json_response(self, 200, {
                 "search_id": search.id,
-                "job_id": job_id,
                 "profile_count": len(profiles),
                 "status": "done",
             })
         except Exception as e:
-            storage.update_job(job_id, status="error", message=str(e))
             json_response(self, 500, {"error": str(e)})
 
     def log_message(self, format, *args):
