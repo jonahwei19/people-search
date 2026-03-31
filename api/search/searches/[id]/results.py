@@ -33,6 +33,7 @@ class handler(BaseHTTPRequestHandler):
                 "reasoning": score.reasoning,
                 "raw_text_preview": (p.raw_text[:400] if p else ""),
                 "linkedin_url": (p.identity.linkedin_url if p else ""),
+                "email": (p.identity.email if p else ""),
             })
 
         json_response(self, 200, {"results": results})

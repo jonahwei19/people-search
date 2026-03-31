@@ -1569,7 +1569,7 @@ async function loadSearchList() {
   const el = document.getElementById('search-list');
   if (!searches.length) { el.innerHTML = '<div style="color:var(--text3);font-size:13px;padding:8px 0;">No saved searches yet.</div>'; return; }
   el.innerHTML = searches.map(s => `
-    <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 12px;border:1px solid var(--border);border-radius:8px;margin-bottom:6px;cursor:pointer;background:var(--card);" onclick="searchLoad('${s.id}')">
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 12px;border:1px solid var(--border);border-radius:8px;margin-bottom:6px;cursor:pointer;background:var(--card);" onclick="searchLoad('${s.id}', ${!!s.has_results})">
       <div><div style="font-weight:600;font-size:14px;">${s.name}</div>
       <div style="font-size:12px;color:var(--text3);">${s.query.substring(0,80)}${s.query.length>80?'...':''}</div></div>
       <div style="text-align:right;font-size:11px;color:var(--text3);">${s.feedback_count} feedback<br>${s.rule_count} rules${s.has_results?'<br><span style="color:var(--green);">has results</span>':''}<br><a href="#" onclick="event.stopPropagation();searchExport('${s.id}')" style="color:var(--accent);">export</a></div>
@@ -1600,11 +1600,16 @@ function searchNewFlow() {
 
 function searchBackToPicker() { sShow('picker'); loadSearchList(); }
 
-async function searchLoad(id) {
+async function searchLoad(id, hasResults) {
   const data = await (await apiFetch(`/api/search/searches/${id}`)).json();
   sId = id;
-  if (data.cache?.scores && Object.keys(data.cache.scores).length) { await searchShowResults(id, data); }
-  else { searchNewFlow(); sId = id; document.getElementById('search-name').value = data.name; }
+  // Cloud strips cache from detail endpoint, so use hasResults flag from list
+  // Local mode still has cache.scores inline
+  if (hasResults || (data.cache?.scores && Object.keys(data.cache.scores).length)) {
+    await searchShowResults(id, data);
+  } else {
+    searchNewFlow(); sId = id; document.getElementById('search-name').value = data.name;
+  }
 }
 
 function chatAppend(role, text) {
@@ -1695,7 +1700,9 @@ async function searchShowResults(id, sd) {
   const resultsData = await (await apiFetch(`/api/search/searches/${id}/results`)).json();
   const results = resultsData.results;
   const excludedCount = resultsData.excluded_count || 0;
-  document.getElementById('search-results-header').innerHTML = `<span id="search-name-display" style="font-weight:600;cursor:pointer;" onclick="searchEditName()" title="Click to rename">${sd.name} <span style="font-size:11px;opacity:0.5;">&#9998;</span></span> \u2014 ${results.length} scored (${sd.feedback_log?.length||0} feedback)`;
+  window._lastSearchResults = results;
+  window._lastSearchName = sd.name;
+  document.getElementById('search-results-header').innerHTML = `<span id="search-name-display" style="font-weight:600;cursor:pointer;" onclick="searchEditName()" title="Click to rename">${sd.name} <span style="font-size:11px;opacity:0.5;">&#9998;</span></span> \u2014 ${results.length} scored (${sd.feedback_log?.length||0} feedback) <button class="btn sm" onclick="exportSearchCSV()" style="margin-left:8px;font-size:11px;">Export CSV</button>`;
   document.getElementById('search-results-list').innerHTML = results.slice(0,50).map((r,i) => `
     <div class="card" style="padding:14px;">
       <div style="display:flex;justify-content:space-between;align-items:center;">
@@ -1747,6 +1754,21 @@ async function sShowExcluded() {
     });
   }
   searchShowResults(sId);
+}
+
+function exportSearchCSV() {
+  const results = window._lastSearchResults;
+  if (!results || !results.length) return;
+  const cols = ['rank','name','score','reasoning','email','linkedin_url'];
+  const escape = v => '"' + String(v||'').replace(/"/g,'""') + '"';
+  const rows = [cols.join(',')];
+  results.forEach((r,i) => rows.push([i+1, escape(r.name), r.score, escape(r.reasoning), escape(r.email), escape(r.linkedin_url)].join(',')));
+  const blob = new Blob([rows.join('\n')], {type:'text/csv'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = (window._lastSearchName || 'search') .replace(/[^a-zA-Z0-9]/g,'_') + '_results.csv';
+  a.click();
+  URL.revokeObjectURL(a.href);
 }
 
 async function searchRerun() {
