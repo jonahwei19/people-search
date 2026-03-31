@@ -1846,7 +1846,7 @@ function searchImportFile(input) {
 }
 
 const _origShowPage = showPage;
-showPage = function(name) { _origShowPage(name); if (name === 'search') { loadSearchList(); loadSearchDatasets(); loadGlobalRules(); } if (name === 'settings') { loadOutreach(); } };
+showPage = function(name) { _origShowPage(name); if (name === 'search') { sShow('picker'); loadSearchList(); loadSearchDatasets(); loadGlobalRules(); } if (name === 'settings') { loadOutreach(); } };
 
 // ── Email Outreach ──
 var outreachDefaults = {
