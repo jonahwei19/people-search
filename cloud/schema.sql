@@ -144,15 +144,26 @@ CREATE TABLE jobs (
 );
 
 -- ── Row-Level Security ──────────────────────────────────────
--- Protects direct DB access via the anon key. The Python adapter uses the
--- service key (bypasses RLS) and filters by account_id in all queries.
+-- CRITICAL: RLS must be enabled on ALL tables, including accounts.
+-- Without RLS, anyone with the anon key (public) can read/write all data.
+-- The Python adapter uses the service key (bypasses RLS) and filters by
+-- account_id in all queries.
+--
+-- If you add a new table, you MUST:
+--   1. Add ALTER TABLE <name> ENABLE ROW LEVEL SECURITY;
+--   2. Add a policy (account_isolation or deny_anon)
+--   3. Run both statements in the Supabase SQL Editor
 
+ALTER TABLE accounts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE datasets ENABLE ROW LEVEL SECURITY;
 ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE searches ENABLE ROW LEVEL SECURITY;
 ALTER TABLE feedback ENABLE ROW LEVEL SECURITY;
 ALTER TABLE global_rules ENABLE ROW LEVEL SECURITY;
 ALTER TABLE jobs ENABLE ROW LEVEL SECURITY;
+
+-- Accounts: deny all direct access (login uses verify_login RPC)
+CREATE POLICY deny_anon ON accounts FOR ALL USING (false);
 
 CREATE POLICY account_isolation ON datasets
   FOR ALL USING (account_id = current_setting('app.account_id', true))
