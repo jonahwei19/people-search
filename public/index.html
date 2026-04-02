@@ -1601,14 +1601,20 @@ function searchNewFlow() {
 function searchBackToPicker() { sShow('picker'); loadSearchList(); }
 
 async function searchLoad(id, hasResults) {
-  const data = await (await apiFetch(`/api/search/searches/${id}`)).json();
-  sId = id;
-  // Cloud strips cache from detail endpoint, so use hasResults flag from list
-  // Local mode still has cache.scores inline
-  if (hasResults || (data.cache?.scores && Object.keys(data.cache.scores).length)) {
-    await searchShowResults(id, data);
-  } else {
-    searchNewFlow(); sId = id; document.getElementById('search-name').value = data.name;
+  sShow('progress');
+  document.getElementById('search-progress-text').textContent = 'Loading search...';
+  document.getElementById('search-progress-fill').style.width = '100%';
+  try {
+    const data = await (await apiFetch(`/api/search/searches/${id}`)).json();
+    sId = id;
+    if (hasResults || (data.cache?.scores && Object.keys(data.cache.scores).length)) {
+      await searchShowResults(id, data);
+    } else {
+      searchNewFlow(); sId = id; document.getElementById('search-name').value = data.name;
+    }
+  } catch(e) {
+    sShow('picker');
+    alert('Failed to load search');
   }
 }
 
