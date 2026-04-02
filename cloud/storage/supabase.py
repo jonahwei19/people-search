@@ -233,14 +233,15 @@ class SupabaseStorage:
             for r in (counts_resp.data or [])
         }
 
+        pj = self._parse_json
         return [
             {
                 "id": row["id"],
                 "name": row["name"],
                 "query": row["query"],
                 "feedback_count": feedback_counts.get(row["id"], 0),
-                "rule_count": len(row.get("search_rules") or []),
-                "has_results": bool(row.get("cache_scores")),
+                "rule_count": len(pj(row.get("search_rules"), [])),
+                "has_results": bool(pj(row.get("cache_scores"), {})),
             }
             for row in response.data
         ]
@@ -442,8 +443,9 @@ class SupabaseStorage:
     def _row_to_search(
         self, row: dict, feedback: list[FeedbackEvent] | None = None
     ) -> DefinedSearch:
+        pj = self._parse_json
         cache_scores = {}
-        for pid, sr in (row.get("cache_scores") or {}).items():
+        for pid, sr in pj(row.get("cache_scores"), {}).items():
             cache_scores[pid] = ScoreResult(**sr)
 
         return DefinedSearch(
@@ -452,14 +454,14 @@ class SupabaseStorage:
             query=row["query"],
             clarification_context=row.get("clarification_context", ""),
             created_at=row.get("created_at", datetime.now(timezone.utc)),
-            search_rules=row.get("search_rules") or [],
-            exemplars=[Exemplar(**e) for e in (row.get("exemplars") or [])],
+            search_rules=pj(row.get("search_rules"), []),
+            exemplars=[Exemplar(**e) for e in pj(row.get("exemplars"), [])],
             feedback_log=feedback or [],
             cache=SearchCache(
                 prompt_hash=row.get("cache_prompt_hash", ""),
                 scores=cache_scores,
             ),
-            applicable_global_rule_ids=row.get("applicable_global_rule_ids") or [],
+            applicable_global_rule_ids=pj(row.get("applicable_global_rule_ids"), []),
         )
 
     def _feedback_to_row(self, search_id: str, event: FeedbackEvent) -> dict:
