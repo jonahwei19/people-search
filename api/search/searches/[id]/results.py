@@ -22,9 +22,14 @@ class handler(BaseHTTPRequestHandler):
 
         profiles = get_v2_profiles(storage)
         profile_map = {p.id: p for p in profiles}
+        excluded = set(search.excluded_profile_ids)
 
         results = []
+        excluded_count = 0
         for pid, score in sorted(search.cache.scores.items(), key=lambda x: -x[1].score):
+            if pid in excluded:
+                excluded_count += 1
+                continue
             p = profile_map.get(pid)
             results.append({
                 "id": pid,
@@ -36,7 +41,7 @@ class handler(BaseHTTPRequestHandler):
                 "email": (p.identity.email if p else ""),
             })
 
-        json_response(self, 200, {"results": results})
+        json_response(self, 200, {"results": results, "excluded_count": excluded_count})
 
     def log_message(self, format, *args):
         pass

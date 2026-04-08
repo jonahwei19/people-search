@@ -99,6 +99,8 @@ CREATE TABLE searches (
   cache_prompt_hash TEXT DEFAULT '',
   cache_scores JSONB DEFAULT '{}'::jsonb,
   applicable_global_rule_ids JSONB DEFAULT '[]'::jsonb,
+  excluded_profile_ids JSONB DEFAULT '[]'::jsonb,
+  prompt_corrections JSONB DEFAULT '[]'::jsonb,
   created_at TIMESTAMPTZ DEFAULT now()
 );
 

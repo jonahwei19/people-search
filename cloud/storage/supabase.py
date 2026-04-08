@@ -165,6 +165,19 @@ class SupabaseStorage:
 
         return profiles
 
+    def load_profile(self, profile_id: str) -> Profile | None:
+        """Load a single profile by ID."""
+        response = (
+            self.client.table("profiles")
+            .select("*")
+            .eq("id", profile_id)
+            .eq("account_id", self.account_id)
+            .execute()
+        )
+        if not response.data:
+            return None
+        return self._row_to_profile(response.data[0])
+
     def update_profile(self, profile: Profile) -> None:
         """Update a single profile in place (by ID)."""
         row = self._profile_to_row(profile)
@@ -196,7 +209,7 @@ class SupabaseStorage:
         if include_scores:
             select = "*"
         else:
-            select = "id, name, query, clarification_context, created_at, search_rules, exemplars, applicable_global_rule_ids, cache_prompt_hash"
+            select = "id, name, query, clarification_context, created_at, search_rules, exemplars, applicable_global_rule_ids, excluded_profile_ids, prompt_corrections, cache_prompt_hash"
         response = (
             self.client.table("searches")
             .select(select)
@@ -433,6 +446,8 @@ class SupabaseStorage:
                 for pid, sr in search.cache.scores.items()
             },
             "applicable_global_rule_ids": search.applicable_global_rule_ids,
+            "excluded_profile_ids": search.excluded_profile_ids,
+            "prompt_corrections": search.prompt_corrections,
             "created_at": (
                 search.created_at.isoformat()
                 if isinstance(search.created_at, datetime)
@@ -462,6 +477,8 @@ class SupabaseStorage:
                 scores=cache_scores,
             ),
             applicable_global_rule_ids=pj(row.get("applicable_global_rule_ids"), []),
+            excluded_profile_ids=pj(row.get("excluded_profile_ids"), []),
+            prompt_corrections=pj(row.get("prompt_corrections"), []),
         )
 
     def _feedback_to_row(self, search_id: str, event: FeedbackEvent) -> dict:
