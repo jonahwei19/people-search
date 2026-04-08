@@ -281,6 +281,11 @@ def submit_feedback():
         # Handle based on classification
         if rating == "strong_no":
             create_negative_exemplar(s, profile, reason)
+            if profile_id not in s.excluded_profile_ids:
+                s.excluded_profile_ids.append(profile_id)
+
+        if rating == "no":
+            create_negative_exemplar(s, profile, reason or "Rejected by user")
 
         if rating == "strong_yes":
             # Extract what makes this profile great → positive exemplar

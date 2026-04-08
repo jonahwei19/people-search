@@ -78,9 +78,15 @@ class handler(BaseHTTPRequestHandler):
             except Exception:
                 classification = {"category": "profile", "key_signal": reason or "unknown"}
 
-            # Create negative exemplar for strong rejects
+            # Create negative exemplar for strong rejects + auto-exclude
             if rating == "strong_no":
                 create_negative_exemplar(search, profile, reason)
+                if profile_id not in search.excluded_profile_ids:
+                    search.excluded_profile_ids.append(profile_id)
+
+            # Regular "no" — create weaker negative exemplar (score=15)
+            if rating == "no" and profile:
+                create_negative_exemplar(search, profile, reason or "Rejected by user")
 
             # Create positive exemplar for strong accepts
             if rating == "strong_yes":
