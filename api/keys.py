@@ -33,7 +33,7 @@ class handler(BaseHTTPRequestHandler):
 
         client = get_supabase_client()
         keys = get_account_keys(client, account["account_id"])
-        json_response(self, 200, {"keys": keys})
+        json_response(self, 200, {"keys": keys, "account_name": account.get("name", "")})
 
     def do_POST(self):
         account = require_auth(self)
