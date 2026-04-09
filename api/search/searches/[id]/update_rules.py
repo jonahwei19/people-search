@@ -20,7 +20,10 @@ class handler(BaseHTTPRequestHandler):
             return
 
         body = read_json_body(self)
-        search.search_rules = body.get("search_rules", [])
+        if "search_rules" in body:
+            search.search_rules = body["search_rules"]
+        if "query" in body:
+            search.query = body["query"]
         storage.save_search(search)
 
         json_response(self, 200, {"status": "ok"})
