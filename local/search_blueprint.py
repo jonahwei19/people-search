@@ -355,6 +355,16 @@ def apply_search_proposal(search_id):
     return jsonify({"status": "ok"})
 
 
+@search_bp.route("/api/search/searches/<search_id>/update-rules", methods=["POST"])
+def update_rules(search_id):
+    s = SEARCHES.get(search_id)
+    if not s:
+        return jsonify({"error": "not found"}), 404
+    s.search_rules = request.json.get("search_rules", [])
+    s.save(str(SEARCHES_DIR))
+    return jsonify({"status": "ok"})
+
+
 @search_bp.route("/api/search/searches/<search_id>/rerun", methods=["POST"])
 def rerun_search(search_id):
     """Synthesize feedback, then re-score."""

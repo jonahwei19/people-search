@@ -25,10 +25,11 @@ Do four things:
 
 1. PATTERN DETECTION: Look across ALL feedback events for patterns. If 3 people were rejected and they're all academics with no shipping experience, that's one rule — not three separate observations. Be specific: "Exclude profiles whose only experience is academic research positions" is better than "Exclude academics."
 
-2. RULES: Propose 0-3 new search-specific rules based on patterns. Each rule must be:
+2. RULES: Propose 0-3 NEW search-specific rules based on patterns. Each rule must be:
    - Actionable (a scorer can apply it)
    - Specific (names the signal, not a vague category)
    - Pattern-based (derived from 2+ feedback events, not just one)
+   - TRULY NEW — do NOT repeat or rephrase rules already in CURRENT RULES. If an existing rule covers the pattern, skip it or use "modified_rules" to refine it.
 
 3. EXEMPLAR CHANGES: Strong accepts → positive exemplars (score 85-95). Strong rejects → negative exemplars (score 5-15). Include the KEY DISTINGUISHING FEATURE in the reason — what makes this person good/bad for this search.
 
