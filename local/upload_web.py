@@ -133,7 +133,7 @@ def api_save_keys():
     return jsonify({"ok": True})
 
 
-@app.route("/api/detect-schema", methods=["POST"])
+@app.route("/api/detect_schema", methods=["POST"])
 def api_detect_schema():
     # Support both JSON body (large files) and multipart FormData
     if request.is_json:
@@ -285,7 +285,7 @@ def api_enrich():
     return jsonify({"job_id": job_id})
 
 
-@app.route("/api/embed-only", methods=["POST"])
+@app.route("/api/embed_only", methods=["POST"])
 def api_embed_only():
     """Skip enrichment, just generate embeddings from uploaded content."""
     data = request.json or {}
@@ -435,7 +435,7 @@ def api_profile_linkedin(profile_id):
     return jsonify({"error": "Profile not found"}), 404
 
 
-@app.route("/api/reenrich-estimate", methods=["POST"])
+@app.route("/api/reenrich_estimate", methods=["POST"])
 def api_reenrich_estimate():
     """Estimate costs for re-enriching an existing dataset."""
     data = request.json or {}

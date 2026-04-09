@@ -1,0 +1,31 @@
+"""POST /api/search/searches/:id/unexclude — Restore an excluded profile."""
+
+from http.server import BaseHTTPRequestHandler
+
+from api._helpers import require_auth, json_response, path_param, read_json_body, get_storage
+
+
+class handler(BaseHTTPRequestHandler):
+    def do_POST(self):
+        account = require_auth(self)
+        if not account:
+            return
+
+        search_id = path_param(self, -2)
+        storage = get_storage(account["account_id"])
+        search = storage.load_search(search_id)
+
+        if not search:
+            json_response(self, 404, {"error": "not found"})
+            return
+
+        body = read_json_body(self)
+        profile_id = body.get("profile_id", "")
+        if profile_id and profile_id in search.excluded_profile_ids:
+            search.excluded_profile_ids.remove(profile_id)
+            storage.save_search(search)
+
+        json_response(self, 200, {"status": "ok"})
+
+    def log_message(self, format, *args):
+        pass

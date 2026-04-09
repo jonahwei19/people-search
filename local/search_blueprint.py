@@ -342,7 +342,7 @@ def synthesize_search_rules(search_id):
         return jsonify({"proposal": {"new_rules": [], "modified_rules": [], "add_exemplars": [], "remove_exemplar_ids": [], "notes": str(e)}})
 
 
-@search_bp.route("/api/search/searches/<search_id>/apply-proposal", methods=["POST"])
+@search_bp.route("/api/search/searches/<search_id>/apply_proposal", methods=["POST"])
 def apply_search_proposal(search_id):
     s = SEARCHES.get(search_id)
     if not s:
@@ -447,12 +447,12 @@ def import_search():
         return jsonify({"error": str(e)}), 400
 
 
-@search_bp.route("/api/search/global-rules")
+@search_bp.route("/api/search/global_rules")
 def list_global_rules():
     return jsonify({"rules": [r.model_dump(mode="json") for r in GLOBAL_RULES.rules]})
 
 
-@search_bp.route("/api/search/global-rules", methods=["POST"])
+@search_bp.route("/api/search/global_rules", methods=["POST"])
 def add_global_rule():
     data = request.json
     rule = GlobalRule(
