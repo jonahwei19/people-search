@@ -1700,11 +1700,9 @@ function pollSearchProgress(id) {
 async function searchShowResults(id, sd) {
   if (!sd) sd = await (await apiFetch(`/api/search/searches/${id}`)).json();
   const rp = document.getElementById('search-rules-panel');
-  var rawRules = sd.search_rules;
-  window._searchRules = ja(rawRules);
-  console.log('rules debug:', typeof rawRules, Array.isArray(rawRules), rawRules, '->', window._searchRules);
-  rp.style.display = window._searchRules.length ? 'block' : 'none';
-  if (window._searchRules.length) renderSearchRules();
+  window._searchRules = ja(sd.search_rules);
+  rp.style.display = 'block';
+  renderSearchRules();
 
   const resultsData = await (await apiFetch(`/api/search/searches/${id}/results`)).json();
   const results = resultsData.results;
@@ -1768,13 +1766,20 @@ async function sShowExcluded() {
 function renderSearchRules() {
   const el = document.getElementById('search-rules-list');
   const rules = window._searchRules || [];
-  el.innerHTML = rules.map((r, i) => `<div style="display:flex;gap:4px;align-items:center;margin:3px 0;">
-    <input type="text" value="${r.replace(/"/g,'&quot;')}" id="srule-${i}" style="flex:1;padding:4px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px;">
-    <button class="btn sm" onclick="deleteSearchRule(${i})" style="opacity:0.5;padding:2px 6px;" title="Delete rule">\u2717</button>
-  </div>`).join('') + `<div style="display:flex;gap:4px;margin-top:6px;">
+  let h = '';
+  if (!rules.length) {
+    h = '<div style="color:var(--text3);font-size:12px;padding:4px 0;">No rules yet. Add rules to guide scoring.</div>';
+  } else {
+    h = rules.map((r, i) => `<div style="display:flex;gap:4px;align-items:center;margin:3px 0;">
+      <input type="text" value="${(r||'').replace(/"/g,'&quot;')}" id="srule-${i}" style="flex:1;padding:4px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px;">
+      <button class="btn sm" onclick="deleteSearchRule(${i})" style="opacity:0.5;padding:2px 6px;" title="Delete rule">\u2717</button>
+    </div>`).join('');
+  }
+  h += `<div style="display:flex;gap:4px;margin-top:6px;">
     <button class="btn sm" onclick="addSearchRule()" style="font-size:11px;">+ Add rule</button>
-    <button class="btn sm primary" onclick="saveSearchRules()" style="font-size:11px;">Save</button>
+    ${rules.length ? '<button class="btn sm primary" onclick="saveSearchRules()" style="font-size:11px;">Save</button>' : ''}
   </div>`;
+  el.innerHTML = h;
 }
 
 function addSearchRule() {
