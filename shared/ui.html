@@ -1817,25 +1817,33 @@ function deleteSearchRule(i) {
 }
 
 async function saveSearchQuery() {
+  var btn = event.target;
   var q = document.getElementById('search-query-edit').value.trim();
   if (!q) return;
+  btn.textContent = 'Saving...'; btn.disabled = true;
   await apiFetch('/api/search/searches/' + sId + '/update_rules', {
     method: 'POST', headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({query: q})
   });
+  btn.textContent = 'Saved'; btn.style.background = 'var(--green)';
+  setTimeout(function() { btn.textContent = 'Save'; btn.style.background = ''; btn.disabled = false; }, 1500);
 }
 
 async function saveSearchRules() {
+  var btn = event.target;
   const rules = [];
   for (let i = 0; i < window._searchRules.length; i++) {
     const el = document.getElementById('srule-' + i);
     if (el && el.value.trim()) rules.push(el.value.trim());
   }
   window._searchRules = rules;
+  btn.textContent = 'Saving...'; btn.disabled = true;
   await apiFetch('/api/search/searches/' + sId + '/update_rules', {
     method: 'POST', headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({search_rules: rules})
   });
+  btn.textContent = 'Saved'; btn.style.background = 'var(--green)';
+  setTimeout(function() { btn.textContent = 'Save'; btn.style.background = ''; btn.disabled = false; }, 1500);
   renderSearchRules();
 }
 
