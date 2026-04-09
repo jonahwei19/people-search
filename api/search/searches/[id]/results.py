@@ -41,7 +41,13 @@ class handler(BaseHTTPRequestHandler):
                 "email": (p.identity.email if p else ""),
             })
 
-        json_response(self, 200, {"results": results, "excluded_count": excluded_count})
+        json_response(self, 200, {
+            "results": results,
+            "excluded_count": excluded_count,
+            "search_rules": search.search_rules,
+            "feedback_count": len(search.feedback_log),
+            "name": search.name,
+        })
 
     def log_message(self, format, *args):
         pass
