@@ -254,6 +254,7 @@ class SupabaseStorage:
                 "query": row["query"],
                 "feedback_count": feedback_counts.get(row["id"], 0),
                 "rule_count": len(pj(row.get("search_rules"), [])),
+                "search_rules": pj(row.get("search_rules"), []),
                 "has_results": bool(pj(row.get("cache_scores"), {})),
             }
             for row in response.data

@@ -1566,6 +1566,8 @@ function sShow(step) {
 
 async function loadSearchList() {
   const {searches} = await (await apiFetch('/api/search/searches')).json();
+  window._searchListData = {};
+  searches.forEach(s => window._searchListData[s.id] = s);
   const el = document.getElementById('search-list');
   if (!searches.length) { el.innerHTML = '<div style="color:var(--text3);font-size:13px;padding:8px 0;">No saved searches yet.</div>'; return; }
   el.innerHTML = searches.map(s => `
@@ -1703,11 +1705,12 @@ async function searchShowResults(id, sd) {
   const resultsData = await (await apiFetch(`/api/search/searches/${id}/results`)).json();
   const results = resultsData.results;
   const excludedCount = resultsData.excluded_count || 0;
-  // Get rules + name from results response (more reliable than detail endpoint)
+  // Get rules + name — try results response, then detail endpoint, then list cache
   if (!sd) sd = await (await apiFetch(`/api/search/searches/${id}`)).json();
-  var rules = resultsData.search_rules || sd.search_rules;
-  var searchName = resultsData.name || sd.name;
-  var feedbackCount = resultsData.feedback_count != null ? resultsData.feedback_count : (sd.feedback_log?.length || 0);
+  var listData = (window._searchListData || {})[id] || {};
+  var rules = resultsData.search_rules || sd.search_rules || listData.search_rules || [];
+  var searchName = resultsData.name || sd.name || listData.name || 'Search';
+  var feedbackCount = resultsData.feedback_count != null ? resultsData.feedback_count : (sd.feedback_log?.length || listData.feedback_count || 0);
 
   const rp = document.getElementById('search-rules-panel');
   window._searchRules = ja(rules);
