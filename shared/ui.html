@@ -494,7 +494,7 @@ window.APP_MODE = '{{APP_MODE}}';
         </div>
         <div id="search-rules-panel" class="card" style="display:none;padding:12px;margin-bottom:12px;">
           <div class="card-header" style="font-size:13px;">Search Rules</div>
-          <div id="search-rules-list" style="font-size:12px;color:var(--text2);"></div>
+          <div id="search-rules-list" style="font-size:12px;color:var(--text2);max-height:180px;overflow-y:auto;"></div>
         </div>
         <div id="search-proposal" class="card" style="display:none;background:var(--accent-light);padding:12px;margin-bottom:12px;">
           <div class="card-header" style="font-size:13px;">Proposed changes from feedback</div>
@@ -1700,7 +1700,7 @@ function pollSearchProgress(id) {
 async function searchShowResults(id, sd) {
   if (!sd) sd = await (await apiFetch(`/api/search/searches/${id}`)).json();
   const rp = document.getElementById('search-rules-panel');
-  window._searchRules = sd.search_rules || [];
+  window._searchRules = ja(sd.search_rules);
   rp.style.display = 'block';
   renderSearchRules();
 
