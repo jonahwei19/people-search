@@ -355,7 +355,7 @@ def apply_search_proposal(search_id):
     return jsonify({"status": "ok"})
 
 
-@search_bp.route("/api/search/searches/<search_id>/update-rules", methods=["POST"])
+@search_bp.route("/api/search/searches/<search_id>/update_rules", methods=["POST"])
 def update_rules(search_id):
     s = SEARCHES.get(search_id)
     if not s:

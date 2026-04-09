@@ -1811,7 +1811,7 @@ async function saveSearchRules() {
     if (el && el.value.trim()) rules.push(el.value.trim());
   }
   window._searchRules = rules;
-  await apiFetch('/api/search/searches/' + sId + '/update-rules', {
+  await apiFetch('/api/search/searches/' + sId + '/update_rules', {
     method: 'POST', headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({search_rules: rules})
   });
@@ -1863,7 +1863,7 @@ async function searchAcceptProposal() {
       return el ? el.value.trim() : r;
     }).filter(r => r);
   }
-  await apiFetch(`/api/search/searches/${sId}/apply-proposal`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({proposal:sProposal})});
+  await apiFetch(`/api/search/searches/${sId}/apply_proposal`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({proposal:sProposal})});
   document.getElementById('search-proposal').style.display = 'none'; sProposal = null; doSearchRerun();
 }
 function searchRejectProposal() { document.getElementById('search-proposal').style.display = 'none'; sProposal = null; doSearchRerun(); }
@@ -1883,7 +1883,7 @@ async function searchEditName() {
 
 // ── Global Rules ──
 async function loadGlobalRules() {
-  const {rules} = await (await apiFetch('/api/search/global-rules')).json();
+  const {rules} = await (await apiFetch('/api/search/global_rules')).json();
   const el = document.getElementById('global-rules-list');
   if (!rules.length) { el.innerHTML = '<div style="color:var(--text3);font-size:12px;">No global rules yet.</div>'; return; }
   el.innerHTML = rules.map(r => `
@@ -1899,7 +1899,7 @@ async function addGlobalRule() {
   if (!text.toLowerCase().startsWith('when')) {
     if (!confirm('Global rules work best starting with "When [condition]..." so the AI knows when to apply them. Add anyway?')) return;
   }
-  await apiFetch('/api/search/global-rules', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({text})});
+  await apiFetch('/api/search/global_rules', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({text})});
   document.getElementById('new-global-rule').value = '';
   loadGlobalRules();
 }
