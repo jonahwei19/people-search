@@ -69,6 +69,8 @@ SCORING CALIBRATION — follow these constraints strictly:
 
 Most candidates should score 20-60. If you're giving more than 3 candidates a 90+, you are being too generous — go back and differentiate. Use the FULL range.
 
+HARD FILTERS: If the query specifies a hard criterion (e.g., "worked at TikTok", "lives in London", "has a PhD"), anyone who does NOT meet that criterion MUST score 0. Do NOT give partial credit for adjacent experience. "Worked at Google" is NOT a match for "worked at TikTok." Apply the filter strictly BEFORE scoring quality.
+
 DIFFERENTIATION: Two candidates should NOT get the same score unless they are genuinely indistinguishable. If you're about to give the same score to multiple people, rank them relative to each other and spread by at least 3 points.
 
 Keep reasons to <15 words. Be specific — name the key signal, not a generic description.""")
