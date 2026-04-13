@@ -925,6 +925,19 @@ function renderSchema(maps) {
 
 // ── Confirm schema → cost ──
 async function confirmSchema() {
+  // Re-enrich mode: save updated mappings and go to cost estimate
+  if (window._reenrichMode) {
+    showLoading('Saving column mappings...');
+    try {
+      await apiFetch('/api/dataset/' + window._reenrichDatasetId, {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({field_mappings: mappings})
+      });
+      hideLoading();
+      reenrichShowCost(window._reenrichDatasetId);
+    } catch(e) { hideLoading(); alert('Failed to save mappings'); }
+    return;
+  }
   showLoading('Preparing dataset...');
   try {
     // Chunk large files: split into batches of ~500 rows to stay under 4.5MB
@@ -1325,7 +1338,38 @@ async function reenrichDataset(id) {
   document.getElementById('dropzone').style.display = 'none';
   datasetId = id;
   currentPollJobId = null;
+  window._reenrichMode = true;
+  window._reenrichDatasetId = id;
 
+  // Load dataset field_mappings and show schema review step
+  showLoading('Loading column mappings...');
+  try {
+    const r = await apiFetch('/api/dataset/' + id);
+    const d = await r.json();
+    hideLoading();
+    if (d.error) { alert(d.error); return; }
+
+    mappings = (d.field_mappings || []).map(function(m) {
+      return {
+        source_column: m.source_column || m.target_name || '',
+        field_type: m.field_type || 'content',
+        target_name: m.target_name || m.source_column || '',
+        sample_values: m.sample_values || [],
+        confidence: m.confidence || 1.0
+      };
+    });
+
+    if (mappings.length) {
+      renderSchema(mappings);
+      goStep(1);
+    } else {
+      // No stored mappings — skip to cost estimate
+      reenrichShowCost(id);
+    }
+  } catch(e) { hideLoading(); alert('Failed to load dataset'); }
+}
+
+async function reenrichShowCost(id) {
   showLoading('Estimating cost...');
   try {
     const r = await apiFetch('/api/reenrich_estimate', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({dataset_id:id})});
@@ -1352,9 +1396,6 @@ async function reenrichDataset(id) {
       costHtml += `<div style="margin-top:12px;font-size:12px;color:var(--text2);">Content fields: <strong>${s.content_field_names.join(', ')}</strong></div>`;
     }
     document.getElementById('costDetail').innerHTML = costHtml;
-
-    window._reenrichMode = true;
-    window._reenrichDatasetId = id;
     goStep(2);
   } catch(e) { hideLoading(); }
 }
