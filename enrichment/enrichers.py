@@ -154,8 +154,13 @@ class LinkedInEnricher:
             # At least one name part must match (handles First Last vs. Last First)
             overlap = profile_parts & enriched_parts
             if len(overlap) >= 1:
-                score += 2
-                log.append(f"  Verify name: MATCH ({overlap})")
+                # Unique/uncommon names are stronger signals
+                name_len = sum(len(p) for p in overlap)
+                if len(overlap) >= 2 and name_len >= 10:
+                    score += 3  # Strong: both first+last match AND uncommon
+                else:
+                    score += 2
+                log.append(f"  Verify name: MATCH ({overlap}, strength={'strong' if score >= 3 else 'normal'})")
             else:
                 log.append(f"  Verify name: MISMATCH ('{profile_name}' vs '{enriched_name}')")
                 return False, log  # Name mismatch is a hard reject
@@ -168,15 +173,24 @@ class LinkedInEnricher:
         for exp in enriched.get("experience", []):
             all_companies.append((exp.get("company") or "").lower())
 
-        if profile_org and any(all_companies):
+        # Skip org check for vague/uninformative org names
+        vague_orgs = {"n/a", "self-employed", "self employed", "freelance", "independent",
+                      "stealth", "stealth startup", "none", "na", "personal", ""}
+        # Extract just the company name (after "at" if present)
+        org_for_check = profile_org.split(" at ")[-1].strip() if " at " in profile_org else profile_org
+        org_is_vague = org_for_check in vague_orgs or org_for_check.startswith("stealth") or org_for_check in ("", "n/a")
+
+        if profile_org and any(all_companies) and not org_is_vague:
             checks += 1
-            org_words = [w for w in re.split(r'[\s&,]+', profile_org) if len(w) > 3]
+            # Use just the company name (after "at" if present), not the title
+            org_to_match = org_for_check
+            org_words = [w for w in re.split(r'[\s&,]+', org_to_match) if len(w) > 3]
             matched = False
             for company in all_companies:
                 if not company:
                     continue
                 # Full match or word overlap
-                if profile_org in company or company in profile_org:
+                if org_to_match in company or company in org_to_match:
                     matched = True
                     break
                 company_words = set(re.split(r'[\s&,]+', company))
@@ -185,10 +199,13 @@ class LinkedInEnricher:
                     break
             if matched:
                 score += 3
-                log.append(f"  Verify org: MATCH ('{profile_org}' found in experience)")
+                log.append(f"  Verify org: MATCH ('{org_to_match}' found in experience)")
             else:
-                score -= 2
-                log.append(f"  Verify org: MISMATCH ('{profile_org}' not in {[c for c in all_companies if c][:3]})")
+                # Soft penalty — people change jobs, orgs get renamed
+                score -= 1
+                log.append(f"  Verify org: MISMATCH ('{org_to_match}' not in {[c for c in all_companies if c][:3]})")
+        elif org_is_vague:
+            log.append(f"  Verify org: SKIPPED (vague org: '{profile_org}')")
 
         # Location check
         profile_country = ""
@@ -218,20 +235,16 @@ class LinkedInEnricher:
                 score += 2
                 log.append(f"  Verify location: MATCH ('{enriched_location}')")
             else:
-                score -= 2
+                # Soft penalty — people relocate
+                score -= 1
                 log.append(f"  Verify location: MISMATCH ('{profile_city or profile_country}' vs '{enriched_location}')")
 
-        # Thin profile check: if the enriched profile has very little data
-        # (1 or fewer experiences, no headline) but the person's content fields
-        # suggest they should have a rich background, reject
+        # Thin profile note: many early-career people have sparse LinkedIn.
+        # Don't penalize — name match is the primary signal. Just log it.
         exp_count = len(enriched.get("experience", []))
         has_headline = bool(enriched.get("headline", "").strip() and enriched.get("headline") != "--")
-        if exp_count <= 1 and not has_headline:
-            # Check if the person's content suggests they should have more
-            content_len = sum(len(v) for v in profile.content_fields.values())
-            if content_len > 200:
-                score -= 3
-                log.append(f"  Verify thin profile: PENALTY (only {exp_count} experiences, no headline, but person has rich content)")
+        if exp_count == 0 and not has_headline:
+            log.append(f"  Verify thin profile: NOTE (0 experiences, no headline — common for early-career)")
 
         # Content-relevance check: if the profile has substantial content
         # (pitch, bio, notes), check if the enriched LinkedIn has ANY overlap
@@ -255,19 +268,14 @@ class LinkedInEnricher:
                     score += 2
                     log.append(f"  Verify content relevance: MATCH ({len(overlap)} shared terms: {list(overlap)[:5]})")
                 elif len(overlap) == 0 and len(content_words) > 10:
-                    score -= 3
-                    log.append(f"  Verify content relevance: MISMATCH (zero overlap between content and LinkedIn)")
+                    score -= 1
+                    log.append(f"  Verify content relevance: WEAK (zero overlap between content and LinkedIn)")
 
-        # Decision: name must match, and if we have org/location to check,
-        # at least one MUST confirm. Org mismatch + location mismatch = definite reject.
-        if checks == 0 and score >= 2:
-            log.append(f"  Verify result: ACCEPTED (name match, score={score})")
-            return True, log
-        if checks == 0 and score < 2:
-            log.append(f"  Verify result: REJECTED (score={score}, thin profile likely wrong person)")
-            return False, log
-
-        if score >= 3:
+        # Decision: name match (score >= 2) is the baseline. Additional checks
+        # add or subtract. Accept if name matched and net score is positive.
+        # With checks: name(+2) + org_mismatch(-1) + content_match(+2) = 3 → accept
+        # Without checks: name(+2) alone is enough
+        if score >= 2:
             log.append(f"  Verify result: ACCEPTED (score={score}, checks={checks})")
             return True, log
         else:

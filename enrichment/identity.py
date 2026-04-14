@@ -635,9 +635,11 @@ class IdentityResolver:
 
         best_score, best_url, best_reasons, best_title = scored[0]
 
-        # Minimum threshold — adaptive based on available context
+        # Minimum threshold — adaptive but not punishing.
+        # More context means we CAN check more signals, but shouldn't REQUIRE them all.
+        # A strong name + slug match should be enough even with rich context.
         context_richness = sum(1 for k in ("org", "title", "city", "country", "email_domain", "content_keywords") if ctx.get(k))
-        min_score = 3 + context_richness
+        min_score = 3 + min(context_richness, 3)  # Cap at 6, was unbounded up to 9
         log.append(f"  Threshold: {min_score} (richness={context_richness}), best={best_score}")
 
         if best_score < min_score:
