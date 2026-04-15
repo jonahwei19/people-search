@@ -650,26 +650,38 @@ class IdentityResolver:
             )
 
         # Ambiguity check: if multiple candidates have the same top score,
-        # we can't tell who's the right person — reject rather than guess wrong
+        # try to break the tie before rejecting
         tied = [s for s in scored if s[0] == best_score]
         if len(tied) > 1:
-            # Check if the best has a distinguishing signal the others don't
-            # (e.g., org match, email evidence, email-slug match)
+            # Tier 1: Check if best has a distinguishing signal the others don't
             distinguishing = {"org-exact", "org-words", "email-evidence", "slug=email",
                               "title-exact", "loc-city", "loc-country"}
             best_has_unique = any(r.split("(")[0] in distinguishing for r in best_reasons)
             second_reasons = tied[1][2]
             second_has_same = any(r.split("(")[0] in distinguishing for r in second_reasons)
 
-            if not best_has_unique or second_has_same:
-                log.append(f"  REJECTED: {len(tied)} candidates tied at score {best_score} — ambiguous, refusing to guess")
-                return ResolveResult(
-                    error=f"Ambiguous: {len(tied)} candidates tied at score {best_score}",
-                    alternatives=[url for _, url, _, _ in tied[:4]],
-                    log=log,
-                )
-            else:
+            if best_has_unique and not second_has_same:
                 log.append(f"  {len(tied)} tied but best has distinguishing signal: {best_reasons}")
+            else:
+                # Tier 2: Count total distinguishing signals per candidate
+                # The one with MORE unique signals is more likely correct
+                def count_signals(reasons):
+                    return sum(1 for r in reasons if r.split("(")[0] in distinguishing)
+                signal_counts = [(count_signals(t[2]), t) for t in tied]
+                signal_counts.sort(key=lambda x: -x[0])
+                if signal_counts[0][0] > signal_counts[1][0]:
+                    best_score, best_url, best_reasons, best_title = signal_counts[0][1]
+                    log.append(f"  {len(tied)} tied but best has more signals ({signal_counts[0][0]} vs {signal_counts[1][0]})")
+                elif len(tied) <= 3:
+                    # Small tie — return top as low confidence rather than rejecting
+                    log.append(f"  {len(tied)} candidates tied at score {best_score} — accepting top with low confidence")
+                else:
+                    log.append(f"  REJECTED: {len(tied)} candidates tied at score {best_score} — ambiguous, refusing to guess")
+                    return ResolveResult(
+                        error=f"Ambiguous: {len(tied)} candidates tied at score {best_score}",
+                        alternatives=[url for _, url, _, _ in tied[:4]],
+                        log=log,
+                    )
 
         confidence = "high" if best_score >= 12 else "medium" if best_score >= 7 else "low"
         alts = [url for _, url, _, _ in scored[1:4]]
