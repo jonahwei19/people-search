@@ -178,7 +178,10 @@ class LinkedInEnricher:
                       "stealth", "stealth startup", "none", "na", "personal", ""}
         # Extract just the company name (after "at" if present)
         org_for_check = profile_org.split(" at ")[-1].strip() if " at " in profile_org else profile_org
-        org_is_vague = org_for_check in vague_orgs or org_for_check.startswith("stealth") or org_for_check in ("", "n/a")
+        vague_starters = ("stealth", "new ", "my ", "own ", "various", "startup")
+        org_is_vague = (org_for_check in vague_orgs
+                        or any(org_for_check.startswith(v) for v in vague_starters)
+                        or org_for_check in ("", "n/a"))
 
         if profile_org and any(all_companies) and not org_is_vague:
             checks += 1
