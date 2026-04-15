@@ -146,13 +146,28 @@ class LinkedInEnricher:
         checks = 0
 
         # Name check (required)
-        enriched_name = (enriched.get("full_name") or "").lower()
-        profile_name = (profile.name or "").lower()
+        import unicodedata
+        def _normalize(s):
+            """Strip diacriticals: Zoltán → Zoltan, Šimon → Simon"""
+            return "".join(c for c in unicodedata.normalize("NFD", s) if unicodedata.category(c) != "Mn").lower()
+
+        enriched_name = _normalize(enriched.get("full_name") or "")
+        profile_name = _normalize(profile.name or "")
+        # Strip suffixes like ", Ph.D.", ", MPA" and abbreviation dots
+        enriched_name = re.sub(r',?\s*(ph\.?d\.?|mpa|mba|m\.?d\.?|jr\.?|sr\.?|iii?|iv)$', '', enriched_name, flags=re.IGNORECASE).strip()
+        enriched_name = enriched_name.replace(".", "")
+
         if enriched_name and profile_name:
-            profile_parts = set(profile_name.split())
-            enriched_parts = set(enriched_name.split())
-            # At least one name part must match (handles First Last vs. Last First)
+            profile_parts = set(profile_name.replace("-", " ").split())
+            enriched_parts = set(enriched_name.replace("-", " ").split())
+            # Direct overlap
             overlap = profile_parts & enriched_parts
+            # Also check prefix matching (Jen→Jennifer, Alex→Alexander)
+            if len(overlap) < 1:
+                for pp in profile_parts:
+                    for ep in enriched_parts:
+                        if len(pp) >= 3 and len(ep) >= 3 and (pp.startswith(ep) or ep.startswith(pp)):
+                            overlap.add(pp)
             if len(overlap) >= 1:
                 # Unique/uncommon names are stronger signals
                 name_len = sum(len(p) for p in overlap)
