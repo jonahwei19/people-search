@@ -41,8 +41,16 @@ from .schema import SchemaDetector, FieldMapping, FieldType
 
 # Bump when the enrichment pipeline changes in ways that affect output quality
 # (different search strategy, different scoring, different identity heuristics).
-# v1 — initial cloud pipeline: Brave/Serper search + EnrichLayer + non-LinkedIn
-#      evidence salvage. Established 2026-04-19.
+#
+# Known tags:
+#   v0-legacy — pre-versioning era. Never set by this constant; used only by
+#               migration 002 to back-fill rows produced before 2026-04-19,
+#               when pipeline code was not version-stamped. Rows with this tag
+#               should be treated as "needs re-enrichment under current code".
+#   v1        — initial cloud pipeline: Brave/Serper search + EnrichLayer +
+#               non-LinkedIn evidence salvage. Established 2026-04-19. This is
+#               the tag written to every profile touched by run_enrichment()
+#               while the constant below is "v1".
 ENRICHMENT_VERSION = "v1"
 from .costs import CostEstimator, CostBreakdown
 from .enrichers import LinkedInEnricher, is_valid_linkedin_url

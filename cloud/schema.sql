@@ -76,7 +76,7 @@ CREATE TABLE profiles (
   -- Pipeline state
   enrichment_status TEXT DEFAULT 'pending',
   enrichment_log JSONB DEFAULT '[]'::jsonb,
-  enrichment_version TEXT DEFAULT '',  -- pipeline generation ("v1", "v2", …)
+  enrichment_version TEXT DEFAULT '',  -- pipeline generation; "" = pending, "v0-legacy" = pre-versioning era, "v1"+ = stamped by run_enrichment()
 
   created_at TIMESTAMPTZ DEFAULT now()
 );

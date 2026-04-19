@@ -59,7 +59,10 @@ class Profile:
     # Pipeline state
     enrichment_status: EnrichmentStatus = EnrichmentStatus.PENDING
     enrichment_log: list[str] = field(default_factory=list)  # per-profile log of what happened
-    enrichment_version: str = ""  # e.g., "v1" — pipeline generation that produced this record
+    enrichment_version: str = ""  # pipeline generation that produced this record.
+    #   "" — pending / never run through any pipeline
+    #   "v0-legacy" — produced before the version stamp existed (back-filled by migration 002)
+    #   "v1", "v2", … — produced by pipeline.run_enrichment() with matching ENRICHMENT_VERSION
     source_dataset: str = ""
     source_row: int = -1
 
