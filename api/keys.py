@@ -1,6 +1,6 @@
 """GET/POST /api/keys — Per-account API key management.
 
-GET  → {"keys": {"BRAVE_API_KEY": "...", "SERPER_API_KEY": "...", ...}}
+GET  → {"keys": {"BRAVE_API_KEY": "...", ...}, "platform_defaults": ["BRAVE_API_KEY", ...]}
 POST → body: {"BRAVE_API_KEY": "new_value", ...}
        response: {"ok": true}
 
@@ -9,6 +9,7 @@ Requires auth (ps_session cookie).
 
 from __future__ import annotations
 
+import os
 import sys
 from http.server import BaseHTTPRequestHandler
 from pathlib import Path
@@ -24,6 +25,8 @@ from cloud.auth import (
     require_auth,
 )
 
+ALL_KEYS = ["BRAVE_API_KEY", "SERPER_API_KEY", "ENRICHLAYER_API_KEY", "GOOGLE_API_KEY"]
+
 
 class handler(BaseHTTPRequestHandler):
     def do_GET(self):
@@ -33,7 +36,13 @@ class handler(BaseHTTPRequestHandler):
 
         client = get_supabase_client()
         keys = get_account_keys(client, account["account_id"])
-        json_response(self, 200, {"keys": keys, "account_name": account.get("name", "")})
+        # Tell the frontend which keys have platform defaults (without exposing values)
+        platform_defaults = [k for k in ALL_KEYS if not keys.get(k) and os.environ.get(k)]
+        json_response(self, 200, {
+            "keys": keys,
+            "account_name": account.get("name", ""),
+            "platform_defaults": platform_defaults,
+        })
 
     def do_POST(self):
         account = require_auth(self)

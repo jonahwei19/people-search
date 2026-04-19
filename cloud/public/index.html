@@ -1429,25 +1429,34 @@ const KEY_DEFS = [
   {id: 'ANTHROPIC_API_KEY', label: 'Anthropic (Claude)', hint: 'Optional. For LLM-based profile summarization. anthropic.com', required: false},
 ];
 
-function renderKeyFields(containerId, values) {
+function renderKeyFields(containerId, values, platformDefaults) {
+  const pd = platformDefaults || [];
   const el = document.getElementById(containerId);
-  el.innerHTML = KEY_DEFS.map(k => `
-    <div style="margin-bottom:14px;">
+  el.innerHTML = KEY_DEFS.map(k => {
+    var hasPlatform = pd.indexOf(k.id) >= 0;
+    var status = values[k.id]
+      ? '<span style="color:var(--green);font-weight:400;">Connected</span>'
+      : hasPlatform
+        ? '<span style="color:var(--accent);font-weight:400;">Using platform default</span>'
+        : k.required
+          ? '<span style="color:var(--amber);font-weight:400;">Not set</span>'
+          : '<span style="color:var(--text3);font-weight:400;">Optional</span>';
+    return `<div style="margin-bottom:14px;">
       <label style="font-size:12px;font-weight:600;color:var(--text2);display:flex;align-items:center;gap:6px;margin-bottom:3px;">
-        ${k.label}
-        ${values[k.id] ? '<span style="color:var(--green);font-weight:400;">Connected</span>' : k.required ? '<span style="color:var(--amber);font-weight:400;">Not set</span>' : '<span style="color:var(--text3);font-weight:400;">Optional</span>'}
+        ${k.label} ${status}
       </label>
-      <input id="key-${k.id}" type="password" value="${values[k.id]||''}" placeholder="${k.id}"
+      <input id="key-${k.id}" type="password" value="${values[k.id]||''}" placeholder="${hasPlatform ? 'Platform key active — override here' : k.id}"
         style="width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;font-family:monospace;">
       <div style="font-size:11px;color:var(--text3);margin-top:2px;">${k.hint}</div>
-    </div>
-  `).join('');
+    </div>`;
+  }).join('');
 }
 
 async function loadKeys() {
   const r = await apiFetch('/api/keys');
   const data = await r.json();
-  return data.keys || data;  // API returns {keys: {...}}, unwrap it
+  window._platformDefaults = data.platform_defaults || [];
+  return data.keys || data;
 }
 
 async function saveKeys() {
@@ -1462,7 +1471,7 @@ async function saveKeys() {
     document.getElementById('keySaveStatus').textContent = 'Saved!';
     setTimeout(() => document.getElementById('keySaveStatus').textContent = '', 2000);
     const vals = await loadKeys();
-    renderKeyFields('keyFields', vals);
+    renderKeyFields('keyFields', vals, window._platformDefaults);
   }
 }
 
@@ -1580,14 +1589,14 @@ async function initApp() {
   showLoading('Loading...');
   try {
     const keys = await loadKeys();
-    renderKeyFields('keyFields', keys);
+    renderKeyFields('keyFields', keys, window._platformDefaults);
 
     const ds = await (await apiFetch('/api/datasets')).json();
     // Only show onboarding in local mode when no keys are configured
     if (window.APP_MODE === 'local') {
       const hasAnyKey = KEY_DEFS.some(k => keys[k.id]);
       if (!hasAnyKey && ds.length === 0) {
-        renderKeyFields('onboardingKeys', keys);
+        renderKeyFields('onboardingKeys', keys, window._platformDefaults);
         document.getElementById('onboardingModal').style.display = 'flex';
       }
     }
