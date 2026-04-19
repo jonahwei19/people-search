@@ -158,16 +158,50 @@ class LinkedInEnricher:
         enriched_name = enriched_name.replace(".", "")
 
         if enriched_name and profile_name:
-            profile_parts = set(profile_name.replace("-", " ").split())
-            enriched_parts = set(enriched_name.replace("-", " ").split())
+            profile_parts_list = profile_name.replace("-", " ").split()
+            enriched_parts_list = enriched_name.replace("-", " ").split()
+            profile_parts = set(profile_parts_list)
+            enriched_parts = set(enriched_parts_list)
             # Direct overlap
             overlap = profile_parts & enriched_parts
-            # Also check prefix matching (Jen→Jennifer, Alex→Alexander)
+            # Also check prefix matching (Jen→Jennifer, Alex→Alexander).
+            # Requires ≥4 chars on both sides to avoid e.g. "Li" matching "Lisa".
             if len(overlap) < 1:
                 for pp in profile_parts:
                     for ep in enriched_parts:
-                        if len(pp) >= 3 and len(ep) >= 3 and (pp.startswith(ep) or ep.startswith(pp)):
+                        if len(pp) >= 4 and len(ep) >= 4 and (pp.startswith(ep) or ep.startswith(pp)):
                             overlap.add(pp)
+
+            # Spurious-match guard: if the profile has both first+last name and
+            # only ONE short token matches, reject. "Abi" (3 chars) matching
+            # "abi-hashem" while "olvera" is missing is a false match — too many
+            # common short name tokens (Abi, Li, Sam, Kim, An, etc.) collide
+            # across totally different people.
+            profile_has_first_last = len(profile_parts_list) >= 2
+            profile_first = profile_parts_list[0] if profile_parts_list else ""
+            profile_last = profile_parts_list[-1] if len(profile_parts_list) >= 2 else ""
+
+            if overlap:
+                single_short_match = (
+                    profile_has_first_last
+                    and len(overlap) == 1
+                    and max(len(p) for p in overlap) < 5
+                )
+                last_name_missing = (
+                    profile_has_first_last
+                    and profile_last
+                    and profile_last not in overlap
+                    # Last name missing from enriched entirely (not just from overlap)
+                    and profile_last not in enriched_name
+                )
+                if single_short_match or last_name_missing:
+                    log.append(
+                        f"  Verify name: WEAK-MATCH REJECTED "
+                        f"(overlap={overlap}, profile='{profile_name}', enriched='{enriched_name}', "
+                        f"reason={'short-token-only' if single_short_match else 'last-name-missing'})"
+                    )
+                    return False, log
+
             if len(overlap) >= 1:
                 # Unique/uncommon names are stronger signals
                 name_len = sum(len(p) for p in overlap)
