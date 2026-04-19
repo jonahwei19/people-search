@@ -114,13 +114,24 @@ class LinkedInEnricher:
                 profile.linkedin_enriched = parsed
                 profile.enrichment_status = EnrichmentStatus.ENRICHED
 
-                # Backfill identity fields from enrichment if missing
+                # Backfill rules (FM5):
+                # - name: fill only when missing (already-safe convention).
+                # - organization / title: NEVER overwrite user-provided values.
+                #   The user's upload is ground truth; LinkedIn is secondary
+                #   evidence that can be wrong-person. Keep enrichment-sourced
+                #   values in separate `enriched_*` fields so downstream code
+                #   can decide how to weight them without contaminating the
+                #   inputs to the next enrichment pass.
                 if not profile.name and parsed.get("full_name"):
                     profile.name = parsed["full_name"]
-                if not profile.organization and parsed.get("current_company"):
-                    profile.organization = parsed["current_company"]
-                if not profile.title and parsed.get("current_title"):
-                    profile.title = parsed["current_title"]
+                if parsed.get("current_company"):
+                    profile.enriched_organization = parsed["current_company"]
+                    if not profile.organization:
+                        profile.organization = parsed["current_company"]
+                if parsed.get("current_title"):
+                    profile.enriched_title = parsed["current_title"]
+                    if not profile.title:
+                        profile.title = parsed["current_title"]
 
                 return EnrichmentResult(success=True, data=parsed, cost=total_cost)
             else:
@@ -138,12 +149,30 @@ class LinkedInEnricher:
         """Cross-check enriched LinkedIn data against what we know about the person.
 
         Compares name, company, and location. Returns (is_match, log_lines).
-        A match requires the name to be plausible AND at least one of
-        org/location to confirm (or no org/location to check against).
+
+        Scoring model (FM2 / P2 fix):
+        - Name match is scored in three tiers:
+            strong (+3): both first AND last name overlap, each ≥5 chars of
+                         unique content (uncommon full-name match).
+            normal (+2): both first and last overlap but shorter, OR strong
+                         prefix/exact match with full name.
+            weak   (+1): single-token overlap, or short common names; cannot
+                         be accepted alone — requires another positive signal.
+        - Positive non-name signals tracked: org match, location match,
+          content-relevance match.
+        - Soft penalties tracked: org mismatch, location mismatch, content
+          relevance WEAK.
+        - Acceptance rule: score >= 2 AND (no soft penalty OR at least one
+          positive non-name signal). This closes the "name match + org
+          mismatch, no other evidence" false-positive path that let
+          same-name-different-person slip through at score=2, checks=1.
         """
         log = []
         score = 0
         checks = 0
+        positive_non_name = 0
+        soft_penalties = 0
+        name_strength = "none"  # "none" / "weak" / "normal" / "strong"
 
         # Name check (required)
         import unicodedata
@@ -203,13 +232,38 @@ class LinkedInEnricher:
                     return False, log
 
             if len(overlap) >= 1:
-                # Unique/uncommon names are stronger signals
-                name_len = sum(len(p) for p in overlap)
-                if len(overlap) >= 2 and name_len >= 10:
-                    score += 3  # Strong: both first+last match AND uncommon
-                else:
+                # Strength classification (FM2 / P2):
+                # - strong: both first+last overlap, each ≥5 chars of unique
+                #           content ("Renee", "DiResta"). Uncommon enough that
+                #           a chance collision with a different person is rare.
+                # - normal: both first+last overlap but shorter (or one side
+                #           is a 4-char prefix / known short name).
+                # - weak:   single-token overlap on a first-name-only profile,
+                #           OR a short (<5 char) token pair. Needs corroboration.
+                overlap_lens = sorted(len(p) for p in overlap)
+                both_present = (
+                    profile_has_first_last
+                    and profile_first in overlap
+                    and profile_last in overlap
+                )
+                if both_present and len(profile_first) >= 5 and len(profile_last) >= 5:
+                    score += 3
+                    name_strength = "strong"
+                elif both_present:
                     score += 2
-                log.append(f"  Verify name: MATCH ({overlap}, strength={'strong' if score >= 3 else 'normal'})")
+                    name_strength = "normal"
+                elif len(overlap) >= 2 and overlap_lens[0] >= 4:
+                    # Two tokens overlap but profile didn't cleanly give us
+                    # first+last (e.g., hyphenated or multi-token names).
+                    score += 2
+                    name_strength = "normal"
+                else:
+                    # Single-token overlap. Profile may be a one-word name
+                    # ("Beez Africa") or a first-name collision. Weak — needs
+                    # another positive signal before we'll accept.
+                    score += 1
+                    name_strength = "weak"
+                log.append(f"  Verify name: MATCH ({overlap}, strength={name_strength})")
             else:
                 log.append(f"  Verify name: MISMATCH ('{profile_name}' vs '{enriched_name}')")
                 return False, log  # Name mismatch is a hard reject
@@ -251,10 +305,12 @@ class LinkedInEnricher:
                     break
             if matched:
                 score += 3
+                positive_non_name += 1
                 log.append(f"  Verify org: MATCH ('{org_to_match}' found in experience)")
             else:
                 # Soft penalty — people change jobs, orgs get renamed
                 score -= 1
+                soft_penalties += 1
                 log.append(f"  Verify org: MISMATCH ('{org_to_match}' not in {[c for c in all_companies if c][:3]})")
         elif org_is_vague:
             log.append(f"  Verify org: SKIPPED (vague org: '{profile_org}')")
@@ -285,10 +341,12 @@ class LinkedInEnricher:
                     loc_match = True
             if loc_match:
                 score += 2
+                positive_non_name += 1
                 log.append(f"  Verify location: MATCH ('{enriched_location}')")
             else:
                 # Soft penalty — people relocate
                 score -= 1
+                soft_penalties += 1
                 log.append(f"  Verify location: MISMATCH ('{profile_city or profile_country}' vs '{enriched_location}')")
 
         # Thin profile note: many early-career people have sparse LinkedIn.
@@ -315,24 +373,47 @@ class LinkedInEnricher:
                         "being", "other", "which", "through", "between", "before", "after"}
                 content_words -= stop
                 enriched_words -= stop
-                overlap = content_words & enriched_words
-                if len(overlap) >= 3:
+                content_overlap = content_words & enriched_words
+                if len(content_overlap) >= 3:
                     score += 2
-                    log.append(f"  Verify content relevance: MATCH ({len(overlap)} shared terms: {list(overlap)[:5]})")
-                elif len(overlap) == 0 and len(content_words) > 10:
+                    positive_non_name += 1
+                    log.append(f"  Verify content relevance: MATCH ({len(content_overlap)} shared terms: {list(content_overlap)[:5]})")
+                elif len(content_overlap) == 0 and len(content_words) > 10:
                     score -= 1
+                    soft_penalties += 1
                     log.append(f"  Verify content relevance: WEAK (zero overlap between content and LinkedIn)")
 
-        # Decision: name match (score >= 2) is the baseline. Additional checks
-        # add or subtract. Accept if name matched and net score is positive.
-        # With checks: name(+2) + org_mismatch(-1) + content_match(+2) = 3 → accept
-        # Without checks: name(+2) alone is enough
-        if score >= 2:
-            log.append(f"  Verify result: ACCEPTED (score={score}, checks={checks})")
-            return True, log
-        else:
+        # Decision rules (FM2 / P2):
+        # 1. Baseline threshold: score >= 2.
+        # 2. If ANY soft penalty fired, require at least one positive non-name
+        #    signal. Name-match-alone at exactly threshold is no longer enough
+        #    — a lone org mismatch or location mismatch would flip acceptance,
+        #    and in practice those ARE wrong-person cases.
+        # 3. Weak name match (single token / short common names) is never
+        #    accepted without a corroborating positive non-name signal.
+        if score < 2:
             log.append(f"  Verify result: REJECTED (score={score}, checks={checks} — likely wrong person)")
             return False, log
+
+        if name_strength == "weak" and positive_non_name == 0:
+            log.append(
+                f"  Verify result: REJECTED (weak name match with no corroborating signal; "
+                f"score={score}, checks={checks}, penalties={soft_penalties})"
+            )
+            return False, log
+
+        if soft_penalties > 0 and positive_non_name == 0:
+            log.append(
+                f"  Verify result: REJECTED (soft penalty without corroborating positive; "
+                f"score={score}, checks={checks}, penalties={soft_penalties})"
+            )
+            return False, log
+
+        log.append(
+            f"  Verify result: ACCEPTED (score={score}, checks={checks}, "
+            f"name={name_strength}, positives={positive_non_name}, penalties={soft_penalties})"
+        )
+        return True, log
 
     def enrich_batch(
         self,

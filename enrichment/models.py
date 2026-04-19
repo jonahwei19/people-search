@@ -42,6 +42,13 @@ class Profile:
     # Keys: full_name, headline, current_company, current_title, location,
     #        summary, experience (list), education (list), context_block (str)
 
+    # Enriched identity fields sourced from LinkedIn. Kept separate from the
+    # user-provided `organization` / `title` so wrong-person matches can't
+    # overwrite ground truth during backfill (FM5). See enrichers.py backfill
+    # logic and plans/diagnosis_correctness.md.
+    enriched_organization: str = ""
+    enriched_title: str = ""
+
     # Arbitrary content fields from upload (notes, transcripts, bios, etc.)
     # Each key is the field name, value is the text content.
     content_fields: dict[str, str] = field(default_factory=dict)

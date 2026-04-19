@@ -69,6 +69,12 @@ CREATE TABLE profiles (
   metadata JSONB DEFAULT '{}'::jsonb,
   fetched_content JSONB DEFAULT '{}'::jsonb,
 
+  -- LinkedIn-sourced identity (separate from user-supplied organization/title
+  -- so wrong-person matches can't overwrite upload ground truth — see
+  -- plans/diagnosis_correctness.md FM5 and migration 003).
+  enriched_organization TEXT DEFAULT '',
+  enriched_title TEXT DEFAULT '',
+
   -- Profile card (compact text for LLM scoring)
   profile_card TEXT DEFAULT '',
   field_summaries JSONB DEFAULT '{}'::jsonb,

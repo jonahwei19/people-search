@@ -392,6 +392,15 @@ class SupabaseStorage:
         # runs would otherwise fail.)
         if profile.enrichment_version:
             row["enrichment_version"] = profile.enrichment_version
+        # enriched_organization / enriched_title: separate columns added by
+        # cloud/migrations/003_add_enriched_identity_fields.sql to prevent
+        # wrong-person LinkedIn data from overwriting user-supplied fields
+        # (see plans/diagnosis_correctness.md FM5). Only write when non-empty
+        # so pre-migration environments don't reject the row.
+        if profile.enriched_organization:
+            row["enriched_organization"] = profile.enriched_organization
+        if profile.enriched_title:
+            row["enriched_title"] = profile.enriched_title
         if dataset_id is not None:
             row["dataset_id"] = dataset_id
         return row
@@ -436,6 +445,8 @@ class SupabaseStorage:
             ),
             enrichment_log=pj(row.get("enrichment_log"), []),
             enrichment_version=row.get("enrichment_version") or "",
+            enriched_organization=row.get("enriched_organization") or "",
+            enriched_title=row.get("enriched_title") or "",
         )
 
     def _search_to_row(self, search: DefinedSearch) -> dict:
