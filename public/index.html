@@ -847,6 +847,7 @@ function goStep(n) {
 
 function resetUpload() {
   file = null; mappings = null; datasetId = null;
+  window._isReenrich = false;
   document.getElementById('uploadFlow').style.display = 'none';
   document.getElementById('dropzone').style.display = '';
   fi.value = '';
@@ -1057,9 +1058,14 @@ async function cancelEnrich() {
     await apiFetch('/api/job/' + currentPollJobId + '/cancel', {method:'POST'});
   }
   currentPollJobId = null;
-  if (datasetId) {
-    await apiFetch('/api/dataset/' + datasetId, {method:'DELETE'});
+  // Only delete the dataset if this was a brand-new upload (not a re-enrichment
+  // of an existing dataset). Re-enrichment cancel should preserve the dataset.
+  if (datasetId && !window._isReenrich) {
+    if (confirm('Cancel and delete this newly uploaded dataset? (Click Cancel to keep the partial enrichment.)')) {
+      await apiFetch('/api/dataset/' + datasetId, {method:'DELETE'});
+    }
   }
+  window._isReenrich = false;
   resetUpload();
   loadDatasets();
 }
@@ -1340,6 +1346,7 @@ async function reenrichDataset(id) {
   currentPollJobId = null;
   window._reenrichMode = true;
   window._reenrichDatasetId = id;
+  window._isReenrich = true;  // keep dataset if user cancels mid-run
 
   // Load dataset field_mappings and show schema review step
   showLoading('Loading column mappings...');
