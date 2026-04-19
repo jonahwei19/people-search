@@ -25,6 +25,7 @@ from cloud.auth import (
     make_session_cookie,
     json_response,
     read_json_body,
+    seed_env_keys,
 )
 
 
@@ -45,6 +46,13 @@ class handler(BaseHTTPRequestHandler):
         if account is None:
             json_response(self, 401, {"error": "Invalid account name or password"})
             return
+
+        # Auto-seed env-level API keys into the account on login.
+        # No-op if the account already has keys set (user overrides win).
+        try:
+            seed_env_keys(client, account["id"])
+        except Exception:
+            pass  # seeding failure shouldn't block login
 
         # Create signed session token and set cookie
         token = create_session_token(account["id"], account["name"])

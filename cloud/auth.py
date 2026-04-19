@@ -231,6 +231,27 @@ def update_account_keys(client: Client, account_id: str, keys: dict) -> None:
     )
 
 
+def seed_env_keys(client: Client, account_id: str) -> list[str]:
+    """Copy env-level API keys into the account's settings for any key not yet set.
+
+    Called on login/first-use so new accounts inherit platform keys automatically.
+    Only seeds keys that exist in env and are missing from the account. Existing
+    account keys are never overwritten (user overrides always win).
+
+    Returns the list of keys that were seeded.
+    """
+    existing = get_account_keys(client, account_id)
+    to_seed = {}
+    for k in API_KEY_FIELDS:
+        if not existing.get(k):
+            env_val = os.environ.get(k, "")
+            if env_val:
+                to_seed[k] = env_val
+    if to_seed:
+        update_account_keys(client, account_id, to_seed)
+    return list(to_seed.keys())
+
+
 def get_account_api_keys_for_pipeline(client: Client, account_id: str) -> dict:
     """Get API keys in the format the enrichment pipeline expects (env-var names).
 
