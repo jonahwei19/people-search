@@ -57,8 +57,12 @@ def _enriched(**kwargs) -> dict:
 
 def test_slug_full_name_match_adds_positive_signal():
     """Slug with both first AND last name corroborates the match.
-    The bonus is a POSITIVE non-name signal, not an anchor-free score bump,
-    so it can pair with a soft penalty to carry an acceptance through."""
+    Slug bonus adds to the score (+2) but does NOT count as an
+    independent positive non-name signal. Rationale: same-name collisions
+    always produce matching slugs, so the slug doesn't corroborate
+    anything the name hasn't already said. An org mismatch on a non-vague
+    org therefore still rejects, which prevents the Abigail Olvera case
+    (matched to Mexican lawyer via common-name slug)."""
     enricher = _enricher()
     profile = Profile(
         name="Dan Fragiadakis",
@@ -72,16 +76,17 @@ def test_slug_full_name_match_adds_positive_signal():
     url = "https://www.linkedin.com/in/dan-fragiadakis-phd"
     verified, log = enricher._verify_match(profile, enriched, url)
     joined = "\n".join(log)
-    # Slug match must have been logged positively.
+    # Slug match must have been logged.
     assert "Verify slug: MATCH" in joined, f"Expected slug MATCH; log:\n{joined}"
-    # And the verification must accept — org mismatch (soft -1) is corroborated
-    # by slug_match (positive_non_name +1).
-    assert verified, f"Expected ACCEPT with slug corroboration; log:\n{joined}"
-    # Structured observability: anchors_positive should include "slug_match".
+    # Rejected: org mismatch with no INDEPENDENT positive signal.
+    assert not verified, f"Expected REJECT (slug alone can't carry through org mismatch); log:\n{joined}"
+    # Structured observability: slug_match still recorded as an anchor.
     decisions = profile.verification_decisions
-    assert decisions, "Expected at least one structured verification decision"
+    assert decisions
     last = decisions[-1]
     assert "slug_match" in last["anchors_positive"], f"anchors_positive={last['anchors_positive']}"
+    assert "org_mismatch" in last["anchors_negative"]
+    assert last["decision"] == "reject"
 
 
 def test_slug_only_first_name_no_penalty():

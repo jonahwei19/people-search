@@ -373,8 +373,14 @@ class LinkedInEnricher:
                 last_in_slug = bool(pl) and len(pl) >= 3 and pl in slug_clean
 
                 if first_in_slug and last_in_slug:
+                    # Slug match adds score, but is NOT an independent
+                    # positive non-name signal. Common-name collisions produce
+                    # matching slugs on every same-named person (Abigail Olvera
+                    # at Dept of State collides with Abigail Olvera the Mexican
+                    # lawyer — both have `abigail-olvera-*` slugs). The slug
+                    # confirms the name match; it doesn't corroborate anything
+                    # the name hasn't already told us.
                     score += 2
-                    positive_non_name += 1
                     anchors_positive.append("slug_match")
                     log.append(f"  Verify slug: MATCH ('{slug}' contains both '{pf}' and '{pl}')")
                 elif first_in_slug and not last_in_slug:
