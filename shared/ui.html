@@ -1594,7 +1594,25 @@ async function initApp() {
 
     loadDatasets();
     hideLoading();
+
+    // Hash routing: navigate to #search/ID if present
+    handleHashRoute();
+    window.addEventListener('hashchange', handleHashRoute);
   } catch(e) { hideLoading(); }
+}
+
+function handleHashRoute() {
+  var hash = window.location.hash;
+  if (!hash) return;
+  var m = hash.match(/^#search\/(.+)$/);
+  if (m) {
+    showPage('search');
+    searchLoad(m[1], true);
+  }
+}
+
+function setHash(path) {
+  history.replaceState(null, '', '#' + path);
 }
 
 // ── Search ──
@@ -1648,12 +1666,13 @@ function searchNewFlow() {
   loadSearchDatasets();
 }
 
-function searchBackToPicker() { sShow('picker'); loadSearchList(); }
+function searchBackToPicker() { sShow('picker'); loadSearchList(); history.replaceState(null, '', window.location.pathname); }
 
 async function searchLoad(id, hasResults) {
   sShow('progress');
   document.getElementById('search-progress-text').textContent = 'Loading search...';
   document.getElementById('search-progress-fill').style.width = '100%';
+  setHash('search/' + id);
   try {
     const resp = await apiFetch(`/api/search/searches/${id}`);
     const data = await resp.json();
