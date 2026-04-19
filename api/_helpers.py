@@ -41,14 +41,22 @@ def get_storage(account_id: str) -> SupabaseStorage:
     return storage
 
 
+ENRICHMENT_KEYS = ["BRAVE_API_KEY", "SERPER_API_KEY", "ENRICHLAYER_API_KEY"]
+
+
 def get_pipeline(account_id: str) -> EnrichmentPipeline:
     """Create an EnrichmentPipeline with per-account API keys.
 
-    Uses /tmp for temp file processing. Persistence goes through
-    SupabaseStorage, not the pipeline's file-based save/load.
+    Falls back to environment-level keys (from Vercel env vars) if
+    the account doesn't have its own. Uses /tmp for temp file processing.
     """
     client = get_supabase_client()
     keys = get_account_keys(client, account_id)
+
+    # Fall back to env-level keys for any missing account keys
+    for k in ENRICHMENT_KEYS:
+        if not keys.get(k):
+            keys[k] = os.environ.get(k, "")
 
     # Set API keys in environment for sub-modules that read os.environ
     for k, v in keys.items():
@@ -59,6 +67,17 @@ def get_pipeline(account_id: str) -> EnrichmentPipeline:
         data_dir="/tmp/ps-datasets",
         enrichlayer_api_key=keys.get("ENRICHLAYER_API_KEY", ""),
     )
+
+
+def check_enrichment_keys(account_id: str) -> list[str]:
+    """Return list of missing enrichment API keys for this account."""
+    client = get_supabase_client()
+    keys = get_account_keys(client, account_id)
+    missing = []
+    for k in ENRICHMENT_KEYS:
+        if not keys.get(k) and not os.environ.get(k):
+            missing.append(k)
+    return missing
 
 
 def path_param(handler, position: int = -1) -> str:

@@ -12,7 +12,7 @@ from http.server import BaseHTTPRequestHandler
 
 from api._helpers import (
     require_auth, json_response, read_json_body,
-    get_pipeline, get_storage,
+    get_pipeline, get_storage, check_enrichment_keys,
 )
 from enrichment.models import EnrichmentStatus
 
@@ -34,6 +34,10 @@ class handler(BaseHTTPRequestHandler):
             return
 
         aid = account["account_id"]
+        missing = check_enrichment_keys(aid)
+        if missing:
+            json_response(self, 400, {"error": f"Missing API keys: {', '.join(missing)}. Add them in Settings."})
+            return
         storage = get_storage(aid)
         pipeline = get_pipeline(aid)
 
