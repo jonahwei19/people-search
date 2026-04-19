@@ -830,16 +830,31 @@ class IdentityResolver:
         log.append(f"  {len(unique)} unique LinkedIn candidates found")
 
         # ── Score candidates ──
-        result = self._score_candidates(unique, ctx, email_verified_company, log)
+        result = self._score_candidates(
+            unique, ctx, email_verified_company, log, profile=profile
+        )
         # Attach evidence to successful results too — useful signal when LinkedIn
         # scoring rejects all candidates.
         if not result.evidence_urls:
             result.evidence_urls = evidence_urls
         return result
 
-    def _score_candidates(self, candidates: list[dict], ctx: dict,
-                          email_verified_company: str, log: list[str]) -> ResolveResult:
-        """Score all candidates against context and pick best."""
+    def _score_candidates(
+        self,
+        candidates: list[dict],
+        ctx: dict,
+        email_verified_company: str,
+        log: list[str],
+        *,
+        profile: Profile | None = None,
+    ) -> ResolveResult:
+        """Score all candidates against context and pick best.
+
+        `profile` is optional — when provided, the Gemini arbiter is consulted
+        for genuinely ambiguous cases (top candidates tied within 1 point OR
+        the top candidate accepting exactly at threshold). The arbiter is
+        capped at 1 call per invocation for cost control.
+        """
         first = ctx.get("first", "").lower()
         last = ctx.get("last", "").lower()
         name_parts = [p for p in [first, last] if p]
@@ -987,10 +1002,105 @@ class IdentityResolver:
             )
 
         # Ambiguity check: if multiple candidates have the same top score,
-        # try to break the tie before rejecting
+        # try to break the tie before rejecting.
         tied = [s for s in scored if s[0] == best_score]
-        if len(tied) > 1:
-            # Tier 1: Check if best has a distinguishing signal the others don't
+
+        # Arbiter gating. We call Gemini when heuristic scoring is genuinely
+        # a coin flip:
+        #   (a) top 2+ candidates are within 1 point of the best score
+        #       (tied OR near-tied, which includes tied), AND there is
+        #       substantive differentiation to ask about, OR
+        #   (b) the top candidate is accepting exactly at threshold — that
+        #       regime has been the source of wrong-person matches in the
+        #       past because a single tiebreaker flips the decision.
+        # Cap: at most ONE arbiter call per profile resolution.
+        near_tied = [s for s in scored if s[0] >= best_score - 1]
+        at_threshold = best_score == min_score
+        should_arbitrate = profile is not None and (
+            (len(near_tied) >= 2) or at_threshold
+        )
+
+        arbiter_decision: dict | None = None
+        if should_arbitrate:
+            # Build candidate dicts from the scored tuples + original `unique`
+            # list. We match by URL, which is the common key.
+            pool = near_tied if len(near_tied) >= 2 else scored[:2]
+            candidate_pool = pool[:5]
+            url_to_raw = {c.get("url", "").rstrip("/").lower(): c for c in candidates}
+            arbiter_candidates = []
+            for idx, (s, u, reasons, t) in enumerate(candidate_pool):
+                raw = url_to_raw.get(u.rstrip("/").lower(), {})
+                arbiter_candidates.append({
+                    "index": idx,
+                    "url": u,
+                    "title": raw.get("title", t),
+                    "description": raw.get("description", ""),
+                    "score": s,
+                    "reasons": list(reasons),
+                })
+
+            log.append(
+                f"  Arbiter: consulting Gemini — near_tied={len(near_tied)}, "
+                f"at_threshold={at_threshold}, candidates={len(arbiter_candidates)}"
+            )
+            try:
+                from .arbiter import arbitrate_identity
+                arbiter_decision = arbitrate_identity(profile, arbiter_candidates)
+            except Exception as e:
+                log.append(f"  Arbiter: error — {e}")
+                arbiter_decision = {
+                    "winner_index": None,
+                    "confidence": "low",
+                    "reason": f"arbiter_error: {e}",
+                    "model": "",
+                    "arbiter_called": True,
+                    "error": True,
+                }
+
+            log.append(
+                f"  Arbiter: winner_index={arbiter_decision.get('winner_index')}, "
+                f"confidence={arbiter_decision.get('confidence')}, "
+                f"reason={arbiter_decision.get('reason')}"
+            )
+
+            # Record as a verification_decisions entry so the eval harness can
+            # slice arbiter behavior alongside heuristic decisions.
+            self._record_arbiter_decision(profile, arbiter_candidates, arbiter_decision)
+
+            winner_idx = arbiter_decision.get("winner_index")
+            if winner_idx is not None:
+                try:
+                    winner_idx = int(winner_idx)
+                except (TypeError, ValueError):
+                    winner_idx = None
+            if winner_idx is not None and 0 <= winner_idx < len(arbiter_candidates):
+                chosen_url = arbiter_candidates[winner_idx]["url"]
+                # Map back to the scored tuple so we use the heuristic score /
+                # reasons for the confidence/method strings.
+                for s_tuple in scored:
+                    if s_tuple[1] == chosen_url:
+                        best_score, best_url, best_reasons, best_title = s_tuple
+                        break
+                log.append(f"  Arbiter: picked {best_url} (overrides heuristic)")
+            else:
+                # Arbiter abstained → treat as ambiguous, skip rather than
+                # accepting a likely-wrong top candidate.
+                log.append(
+                    f"  REJECTED: arbiter abstained on {len(tied)}-way tie "
+                    f"(score={best_score})"
+                )
+                return ResolveResult(
+                    error=(
+                        f"Ambiguous: arbiter abstained on "
+                        f"{len(tied)} tied at score {best_score}"
+                    ),
+                    alternatives=[url for _, url, _, _ in tied[:4]],
+                    log=log,
+                )
+        elif len(tied) > 1:
+            # No arbiter available (profile==None) — fall back to the pre-arbiter
+            # heuristic tie-break chain. Preserved verbatim so behavior is
+            # unchanged when `profile` is not supplied (e.g., unit tests).
             distinguishing = {"org-exact", "org-words", "email-evidence", "slug=email",
                               "title-exact", "loc-city", "loc-country"}
             best_has_unique = any(r.split("(")[0] in distinguishing for r in best_reasons)
@@ -1000,8 +1110,6 @@ class IdentityResolver:
             if best_has_unique and not second_has_same:
                 log.append(f"  {len(tied)} tied but best has distinguishing signal: {best_reasons}")
             else:
-                # Tier 2: Count total distinguishing signals per candidate
-                # The one with MORE unique signals is more likely correct
                 def count_signals(reasons):
                     return sum(1 for r in reasons if r.split("(")[0] in distinguishing)
                 signal_counts = [(count_signals(t[2]), t) for t in tied]
@@ -1010,7 +1118,6 @@ class IdentityResolver:
                     best_score, best_url, best_reasons, best_title = signal_counts[0][1]
                     log.append(f"  {len(tied)} tied but best has more signals ({signal_counts[0][0]} vs {signal_counts[1][0]})")
                 elif len(tied) <= 3:
-                    # Small tie — return top as low confidence rather than rejecting
                     log.append(f"  {len(tied)} candidates tied at score {best_score} — accepting top with low confidence")
                 else:
                     log.append(f"  REJECTED: {len(tied)} candidates tied at score {best_score} — ambiguous, refusing to guess")
@@ -1030,6 +1137,69 @@ class IdentityResolver:
             method=f"score={best_score} ({', '.join(best_reasons)})",
             alternatives=alts,
             log=log,
+        )
+
+    @staticmethod
+    def _record_arbiter_decision(
+        profile: Profile | None,
+        arbiter_candidates: list[dict],
+        arbiter_decision: dict,
+    ) -> None:
+        """Append the arbiter's output as a verification_decisions entry on
+        the profile, so eval harnesses can slice arbiter activity alongside
+        heuristic decisions.
+
+        Defensive: older Profile instances may not have the
+        `verification_decisions` attribute; we initialise it if missing, and
+        swallow any assignment errors (e.g., frozen dataclasses).
+        """
+        if profile is None:
+            return
+        from datetime import datetime, timezone
+
+        decisions = getattr(profile, "verification_decisions", None)
+        if decisions is None:
+            decisions = []
+            try:
+                profile.verification_decisions = decisions
+            except Exception:
+                return
+
+        winner_idx = arbiter_decision.get("winner_index")
+        winner_url = ""
+        if winner_idx is not None:
+            try:
+                widx = int(winner_idx)
+                if 0 <= widx < len(arbiter_candidates):
+                    winner_url = arbiter_candidates[widx].get("url", "")
+            except (TypeError, ValueError):
+                pass
+
+        if winner_idx is None:
+            decision_label = "ambiguous"
+            reason_prefix = "arbiter abstained"
+        elif arbiter_decision.get("error"):
+            decision_label = "ambiguous"
+            reason_prefix = "arbiter error"
+        else:
+            decision_label = "accept"
+            reason_prefix = f"arbiter selected index={winner_idx}"
+
+        decisions.append(
+            {
+                "linkedin_url": winner_url,
+                "enriched_name": "",
+                "score": 0,
+                "anchors_positive": ["arbiter_called"],
+                "anchors_negative": [],
+                "decision": decision_label,
+                "reason": (
+                    f"{reason_prefix} (confidence={arbiter_decision.get('confidence')}, "
+                    f"reason={arbiter_decision.get('reason')}, "
+                    f"candidates={len(arbiter_candidates)})"
+                ),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
         )
 
     def resolve_batch(

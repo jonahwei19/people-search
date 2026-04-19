@@ -140,9 +140,9 @@ def test_email_exact_tagged_but_email_username_not() -> None:
         captured = {}
         orig_score = resolver._score_candidates
 
-        def capture_score(candidates, ctx, evc, log):
+        def capture_score(candidates, ctx, evc, log, **kwargs):
             captured["candidates"] = list(candidates)
-            return orig_score(candidates, ctx, evc, log)
+            return orig_score(candidates, ctx, evc, log, **kwargs)
 
         resolver._score_candidates = capture_score  # type: ignore[method-assign]
 
