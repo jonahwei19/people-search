@@ -1,4 +1,16 @@
-"""POST /api/reenrich — Reset and re-enrich a dataset (chunked)."""
+"""POST /api/reenrich — Reset and re-enrich a dataset.
+
+Historically this endpoint ran `resolve + enrich` in chunks but deferred
+`fetch_links` + `build_profile_cards` to a single post-chunk pass. For
+datasets above ~100 profiles that final pass exceeded Vercel's 60s timeout,
+so re-enriched datasets ended up without fetched_content or profile_cards
+— even when the individual chunks succeeded.
+
+Fix: fetch links per-chunk (same model as api/enrich) so every saved batch
+already has its non-LinkedIn content populated. Cards are built once at the
+end; build_profile_cards is per-profile and fast enough to finish inside a
+single invocation for typical datasets.
+"""
 
 from http.server import BaseHTTPRequestHandler
 
@@ -6,6 +18,7 @@ from api._helpers import (
     require_auth, json_response, read_json_body,
     get_pipeline, get_storage,
 )
+from api.enrich import _fetch_one_profile  # reuse phased fetcher
 from enrichment.models import EnrichmentStatus
 
 CHUNK_SIZE = 10
@@ -52,7 +65,9 @@ class handler(BaseHTTPRequestHandler):
         pending = [p for p in dataset.profiles if p.enrichment_status == EnrichmentStatus.PENDING]
 
         if not pending:
-            pipeline.fetch_links(dataset)
+            # Final pass: build cards over the whole dataset (fast, per-profile).
+            # Links were already fetched per-chunk during the enrichment loop so
+            # we don't redo that here.
             pipeline.build_profile_cards(dataset)
             storage.save_dataset(dataset)
             storage.update_job(job_id, status="done", current_count=total)
@@ -64,6 +79,15 @@ class handler(BaseHTTPRequestHandler):
         try:
             pipeline.resolver.resolve_batch(chunk)
             pipeline.enricher.enrich_batch(chunk)
+            # Fetch non-LinkedIn content for this chunk BEFORE saving so the
+            # DB row reflects the full enrichment. Previously deferred until
+            # the end; on large datasets that step timed out.
+            for p in chunk:
+                if p.twitter_url or p.website_url or p.resume_url or p.other_links:
+                    try:
+                        _fetch_one_profile(p)
+                    except Exception:
+                        pass  # link fetch failure shouldn't kill re-enrichment
             storage.save_profiles(dataset.id, dataset.profiles)
 
             done_count = sum(1 for p in dataset.profiles
