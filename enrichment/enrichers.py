@@ -90,6 +90,7 @@ class LinkedInEnricher:
             return EnrichmentResult(success=False, error="No valid LinkedIn URL")
 
         total_cost = 0.0
+        api_errors = 0  # FM6: track API-side failures separately from wrong-person rejections
         for url in urls_to_try:
             url = normalize_linkedin_url(url)
             profile.enrichment_log.append(f"Trying LinkedIn: {url}")
@@ -100,6 +101,7 @@ class LinkedInEnricher:
             if data is None:
                 profile.enrichment_log.append(f"  → API returned no data")
                 total_cost += self._cost_per_call
+                api_errors += 1
                 continue
 
             total_cost += self._cost_per_call
@@ -143,8 +145,22 @@ class LinkedInEnricher:
             else:
                 profile.enrichment_log.append(f"  REJECTED: {url} (wrong person)")
 
-        # All candidates failed verification
+        # All candidates either rejected OR errored.
+        # FM6: if EVERY attempt was an API error (no data returned), that's
+        # not a wrong-person conclusion — it's an external-API failure that
+        # should be retried later. Mark as PENDING so a re-enrichment picks
+        # it up, rather than FAILED which means "we tried and rejected."
         profile.linkedin_url = ""
+        if api_errors == len(urls_to_try) and api_errors > 0:
+            profile.enrichment_status = EnrichmentStatus.PENDING
+            profile.enrichment_log.append(
+                f"  → All {api_errors} API calls failed — keeping PENDING for retry"
+            )
+            return EnrichmentResult(
+                success=False,
+                error=f"All {api_errors} LinkedIn API calls errored (transient)",
+                cost=total_cost,
+            )
         profile.enrichment_status = EnrichmentStatus.FAILED
         return EnrichmentResult(
             success=False, error=f"All {len(urls_to_try)} LinkedIn candidates failed verification",
