@@ -458,22 +458,23 @@ def _follow_email_evidence(
 def _brave_search(query: str, api_key: str) -> list[dict]:
     if not api_key:
         return []
-    try:
-        resp = requests.get(
+    from ._retry import retry_request
+    resp = retry_request(
+        lambda: requests.get(
             BRAVE_SEARCH_URL,
             headers={"X-Subscription-Token": api_key},
             params={"q": query, "count": 5},
             timeout=30,
-        )
-        if resp.status_code != 200:
-            return []
+        ),
+        max_attempts=3, base_delay=1.5, label=f"Brave {query[:40]}",
+    )
+    if resp is None or resp.status_code != 200:
+        return []
+    try:
         return [
             {"title": r.get("title", ""), "url": r.get("url", ""), "description": r.get("description", "")}
             for r in resp.json().get("web", {}).get("results", [])
         ]
-    except requests.Timeout:
-        print(f"  [TIMEOUT] Brave search timed out for: {query[:60]}")
-        return []
     except Exception:
         return []
 
@@ -481,15 +482,19 @@ def _brave_search(query: str, api_key: str) -> list[dict]:
 def _serper_search(query: str, api_key: str) -> list[dict]:
     if not api_key:
         return []
-    try:
-        resp = requests.post(
+    from ._retry import retry_request
+    resp = retry_request(
+        lambda: requests.post(
             SERPER_SEARCH_URL,
             headers={"X-API-KEY": api_key, "Content-Type": "application/json"},
             json={"q": query, "num": 5},
             timeout=30,
-        )
-        if resp.status_code != 200:
-            return []
+        ),
+        max_attempts=3, base_delay=1.5, label=f"Serper {query[:40]}",
+    )
+    if resp is None or resp.status_code != 200:
+        return []
+    try:
         return [
             {"title": r.get("title", ""), "url": r.get("link", ""), "description": r.get("snippet", "")}
             for r in resp.json().get("organic", [])

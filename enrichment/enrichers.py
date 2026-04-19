@@ -521,52 +521,65 @@ class LinkedInEnricher:
         return stats
 
     def _call_api(self, linkedin_url: str, retries: int = 2) -> dict | str | None:
-        """Call EnrichLayer API. Returns parsed JSON, 'OUT_OF_CREDITS', or None."""
+        """Call EnrichLayer API. Returns parsed JSON, 'OUT_OF_CREDITS', or None.
+
+        Retries transient network failures (timeout / connection reset / 5xx)
+        with exponential backoff. 429 rate-limit still uses Retry-After.
+        """
         if not self.api_key:
             return None
 
-        try:
-            resp = requests.get(
+        from ._retry import retry_request
+
+        resp = retry_request(
+            lambda: requests.get(
                 ENRICHLAYER_ENDPOINT,
                 headers={"Authorization": f"Bearer {self.api_key}"},
                 params={"profile_url": linkedin_url},
                 timeout=30,
-            )
+            ),
+            max_attempts=3,
+            base_delay=2.0,
+            label=f"EnrichLayer {linkedin_url[-32:]}",
+        )
+        if resp is None:
+            return None
 
-            if resp.status_code in (402, 403) and "credits" in resp.text.lower():
-                return "OUT_OF_CREDITS"
+        if resp.status_code in (402, 403) and "credits" in resp.text.lower():
+            return "OUT_OF_CREDITS"
 
-            if resp.status_code == 429:
-                if retries > 0:
-                    retry_after = int(resp.headers.get("retry-after", 30))
-                    wait = min(retry_after + 5, 180)
-                    print(
-                        f"  Rate limited, waiting {wait}s ({retries} retries left)...",
-                        file=sys.stderr,
-                    )
-                    time.sleep(wait)
-                    return self._call_api(linkedin_url, retries=retries - 1)
-                return None
-
-            if resp.status_code == 404:
-                return None
-
-            if resp.status_code != 200:
+        if resp.status_code == 429:
+            if retries > 0:
+                retry_after = int(resp.headers.get("retry-after", 30))
+                wait = min(retry_after + 5, 180)
                 print(
-                    f"  API error {resp.status_code}: {resp.text[:100]}",
+                    f"  Rate limited, waiting {wait}s ({retries} retries left)...",
                     file=sys.stderr,
                 )
-                return None
-
-            data = resp.json()
-            if isinstance(data, dict) and data.get("error"):
-                return None
-
-            return data
-
-        except Exception as e:
-            print(f"  Request failed: {e}", file=sys.stderr)
+                time.sleep(wait)
+                return self._call_api(linkedin_url, retries=retries - 1)
             return None
+
+        if resp.status_code == 404:
+            return None
+
+        if resp.status_code != 200:
+            print(
+                f"  API error {resp.status_code}: {resp.text[:100]}",
+                file=sys.stderr,
+            )
+            return None
+
+        try:
+            data = resp.json()
+        except Exception as e:
+            print(f"  JSON parse failed: {e}", file=sys.stderr)
+            return None
+
+        if isinstance(data, dict) and data.get("error"):
+            return None
+
+        return data
 
     def _parse_response(self, data: dict) -> dict:
         """Parse EnrichLayer response into our normalized format."""
