@@ -49,9 +49,14 @@ from .schema import SchemaDetector, FieldMapping, FieldType
 #               should be treated as "needs re-enrichment under current code".
 #   v1        — initial cloud pipeline: Brave/Serper search + EnrichLayer +
 #               non-LinkedIn evidence salvage. Established 2026-04-19. This is
-#               the tag written to every profile touched by run_enrichment()
-#               while the constant below is "v1".
-ENRICHMENT_VERSION = "v1"
+#               the tag written to profiles touched by the v1 run_enrichment
+#               code path (strategy="v1").
+#   v2        — source-agnostic Variant A+ pipeline (see enrichment/v2/).
+#               Stages: cohort → org_site → verticals (OpenAlex, GitHub,
+#               Substack) → LinkedIn → open-web fallback → two-anchor
+#               verifier. Established 2026-04-19. Written to profiles
+#               touched via strategy="v2" (default for fresh runs).
+ENRICHMENT_VERSION = "v2"
 from .costs import CostEstimator, CostBreakdown
 from .enrichers import LinkedInEnricher, is_valid_linkedin_url
 from .identity import IdentityResolver
@@ -204,11 +209,32 @@ class EnrichmentPipeline:
         self,
         dataset: Dataset,
         on_progress: Callable[[int, int, str], None] | None = None,
+        strategy: str = "v2",
     ) -> dict:
-        """Full enrichment: resolve identities, then enrich LinkedIn profiles.
+        """Full enrichment. Default strategy is v2 (Variant A+, source-agnostic).
 
-        Returns combined stats dict.
+        Args:
+            dataset:    The dataset to enrich (modified in place).
+            on_progress: Optional progress callback.
+            strategy:   "v2" (default) or "v1" for the legacy LinkedIn-first
+                        path. Existing datasets that opted into v1 can pass
+                        strategy="v1" for parity re-runs.
+
+        Returns:
+            Aggregate stats dict including enrichment_version.
         """
+        if strategy == "v1":
+            return self._run_enrichment_v1(dataset, on_progress=on_progress)
+        if strategy == "v2":
+            return self._run_enrichment_v2(dataset, on_progress=on_progress)
+        raise ValueError(f"unknown enrichment strategy: {strategy!r}")
+
+    def _run_enrichment_v1(
+        self,
+        dataset: Dataset,
+        on_progress: Callable[[int, int, str], None] | None = None,
+    ) -> dict:
+        """Legacy LinkedIn-first pipeline (v1 tag). Kept for back-compat."""
         # Step 1: Resolve emails → LinkedIn URLs
         resolve_stats = self.resolve_identities(dataset, on_progress=on_progress)
 
@@ -222,12 +248,10 @@ class EnrichmentPipeline:
             on_batch_save=on_batch_save,
         )
 
-        # Stamp pipeline version onto every profile that was touched this run
         for p in dataset.profiles:
             if p.enrichment_status in (EnrichmentStatus.ENRICHED, EnrichmentStatus.SKIPPED, EnrichmentStatus.FAILED):
-                p.enrichment_version = ENRICHMENT_VERSION
+                p.enrichment_version = "v1"
 
-        # Combine stats
         stats = {
             "resolved": resolve_stats.get("resolved", 0),
             "resolve_failed": resolve_stats.get("failed", 0),
@@ -235,7 +259,43 @@ class EnrichmentPipeline:
             "skipped": enrich_stats.get("skipped", 0),
             "failed": enrich_stats.get("failed", 0),
             "total_cost": enrich_stats.get("total_cost", 0),
-            "enrichment_version": ENRICHMENT_VERSION,
+            "enrichment_version": "v1",
+            "strategy": "v1",
+        }
+        dataset.enrichment_stats.update(stats)
+        return stats
+
+    def _run_enrichment_v2(
+        self,
+        dataset: Dataset,
+        on_progress: Callable[[int, int, str], None] | None = None,
+    ) -> dict:
+        """Variant A+ source-agnostic pipeline (v2 tag)."""
+        from .v2 import run_v2
+
+        def on_batch_save():
+            self.save(dataset)
+
+        v2_stats = run_v2(
+            dataset.profiles,
+            on_progress=on_progress,
+            on_batch_save=on_batch_save,
+            enrichlayer_api_key=self.enricher.api_key,
+        )
+
+        # Stamp pipeline version onto every profile that was touched this run
+        for p in dataset.profiles:
+            if p.enrichment_status in (EnrichmentStatus.ENRICHED, EnrichmentStatus.SKIPPED, EnrichmentStatus.FAILED):
+                p.enrichment_version = "v2"
+
+        stats = {
+            "enriched": v2_stats.get("enriched", 0),
+            "thin": v2_stats.get("thin", 0),
+            "hidden": v2_stats.get("hidden", 0),
+            "failed": v2_stats.get("failed", 0),
+            "total_cost": v2_stats.get("total_cost_usd", 0.0),
+            "enrichment_version": "v2",
+            "strategy": "v2",
         }
         dataset.enrichment_stats.update(stats)
         return stats
