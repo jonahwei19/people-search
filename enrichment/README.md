@@ -1,241 +1,185 @@
-# Enrichment Pipeline — Architecture & API Reference
+# Enrichment Pipeline
 
-This is the data ingestion layer for People Search. It takes arbitrary CSV/JSON uploads of people, detects the schema, enriches profiles (LinkedIn, web links), and produces compact profile cards that the v2 LLM judge scores.
+Turn `(name, email, org?)` into a searchable profile with verified LinkedIn data plus non-LinkedIn web footprint (personal site, GitHub, Substack, academic pages, Twitter).
 
-## How It Works
+## Two strategies
+
+### v1 (default) — LinkedIn-first with tightened verification
 
 ```
-User drops CSV/JSON
+name + email + org
     │
     ▼
-Schema Detection (enrichment/schema.py)
-    │  Auto-classifies columns: identity / links / content / metadata / ignore
-    │  Validates column names against sample data (e.g., "LinkedIn" with "Yes/No" → metadata, not URL)
-    │  Multiple name fields (First Name + Last Name) get concatenated
+identity.py
+    │  Brave + Serper search → LinkedIn URL candidates
+    │  Short-circuits Serper when Brave returns ≥3 results
+    │  Non-LinkedIn URLs collected as evidence_urls (verified with two-anchor rule)
     ▼
-Cost Estimation (enrichment/costs.py)
-    │  Shows: N profiles × $X for LinkedIn enrichment, M email lookups
-    │  Cross-dataset dedup: flags profiles already in other datasets
+enrichers.py
+    │  EnrichLayer API → full LinkedIn data
+    │  _verify_match: tiered name scoring (strong/normal/weak) + org + location + slug
+    │  Rejects: weak-match-without-corroboration, last-name-missing, org-mismatch-no-signal
+    │  API errors keep status PENDING for retry; only real mismatches go to FAILED
+    │  If verifier picks tied candidates (≤1pt apart), calls arbiter.py (Gemini)
     ▼
-Identity Resolution (enrichment/identity.py)
-    │  For profiles with name but no LinkedIn URL:
-    │  Searches Brave for LinkedIn profiles using ALL available context
-    │  (name + org + title + city + country + email domain)
-    │  Validates matches against context — stricter when more context available
+fetchers.py
+    │  GitHub, website, Twitter (via Brave), Google Drive → fetched_content
     ▼
-LinkedIn Enrichment (enrichment/enrichers.py)
-    │  For profiles with LinkedIn URLs (original or resolved):
-    │  Calls EnrichLayer API → full experience, education, headline, about
-    ▼
-Link Fetching (enrichment/fetchers.py)
-    │  GitHub → public API (bio, repos)
-    │  Websites → scrape about/bio text
-    │  Twitter/X → Brave Search for bio extraction
-    │  Google Drive → gws CLI (Docs as text, PDFs with PyPDF2)
-    ▼
-Profile Card Builder (enrichment/summarizer.py)
-    │  Classifies each field: first_person / expert_assessment / linkedin / self_reported
-    │  First-person (call notes, transcripts) → kept mostly intact
-    │  Self-reported (pitches, essays) → compressed to one-liner
-    │  LinkedIn → structured, trimmed to top 5 roles
-    │  Output: profile.profile_card (compact text for LLM judge)
-    ▼
-Saved as Dataset (datasets/<id>.json + datasets/<id>_embeddings.npz)
+summarizer.py
+    │  Build compact profile_card for LLM-judge scoring
 ```
 
-## File Structure
+### v2 — source-agnostic (in `enrichment/v2/`)
+
+For cohorts where LinkedIn is weak (academics, policy, early-career). Cohort-aware stage ladder with skip-when-satisfied:
 
 ```
-enrichment/
-├── __init__.py          # Exports: EnrichmentPipeline, SchemaDetector, etc.
-├── pipeline.py          # Main orchestrator — wires all steps together
-├── schema.py            # Column auto-detection + field type classification
-├── models.py            # Profile and Dataset dataclasses
-├── identity.py          # Email/name → LinkedIn URL resolution via Brave Search
-├── enrichers.py         # LinkedIn enrichment via EnrichLayer API
-├── fetchers.py          # GitHub, website, Twitter/X, Google Drive content fetchers
-├── summarizer.py        # Profile card builder (compresses verbose fields)
-├── dedup.py             # Cross-dataset duplicate detection
-├── costs.py             # Cost estimation before enrichment
-├── SETUP.md             # API key setup instructions for new users
-├── INTAKE_SPEC.md       # Design spec and rationale
-├── README.md            # This file
-└── test_fixtures/       # Test CSVs for different upload scenarios
-    ├── minimal_emails.csv
-    ├── crm_export.csv
-    ├── conference_attendees.csv
-    ├── research_database.csv
-    └── messy_google_contacts.csv
-
-upload_web.py              # Flask web app (localhost:5556) — upload UI + dataset management
-datasets/                  # Saved datasets (JSON + .npz)
-uploads/                   # Temporary uploaded files
+Stage 1: cohort.py         — classify email (gov/edu/corp/personal), derive org_domain
+Stage 2: org_site.py       — crawl <org_domain>/{team,people,staff,bio,…}
+Stage 3: vertical_*.py     — OpenAlex (edu), GitHub (tech), Substack (writers)
+Stage 4: linkedin_resolve.py  — wraps v1 identity+enrich
+Stage 5: open_web.py       — Brave/Serper fallback when stages 2–4 produce <2 anchors
+Stage 6: verify.py         — two-anchor rule: an Evidence is STRONG only with ≥2
+                             independent anchors (exact_email_on_page, name_tokens,
+                             org_domain_match, title_match, affiliation_match,
+                             url_slug_match, cross_link)
 ```
 
-## Data Model
+Enable with `pipeline.run_enrichment(dataset, strategy="v2")`. Default is still v1.
 
-### Profile (`enrichment/models.py`)
+## Data model (`models.py`)
 
 ```python
 @dataclass
 class Profile:
-    # Identity
-    id: str                    # auto-generated UUID
-    name: str                  # full name (First + Last concatenated if separate)
-    email: str
-    linkedin_url: str          # set by upload OR resolved by identity.py
-    organization: str
-    title: str
-    phone: str
-
+    id: str
+    # Identity (user upload is ground truth; never overwritten by enrichment)
+    name: str; email: str; linkedin_url: str
+    organization: str; title: str; phone: str
     # Links
-    twitter_url: str
-    website_url: str
-    resume_url: str
+    twitter_url: str; website_url: str; resume_url: str
     other_links: list[str]
-
-    # Enriched LinkedIn data (from EnrichLayer)
-    linkedin_enriched: dict    # {full_name, headline, experience[], education[], context_block}
-
-    # User-uploaded content fields (arbitrary — varies by dataset)
-    content_fields: dict[str, str]   # e.g. {"call_notes": "...", "pitch": "..."}
-
-    # Metadata (structured, filterable)
-    metadata: dict[str, Any]         # e.g. {"tags": "biosec", "priority": "8"}
-
-    # Fetched link content
-    fetched_content: dict[str, str]  # e.g. {"github": "Bio: ...", "website": "..."}
-
-    # Summarized profile card (what the LLM judge reads)
-    profile_card: str                # compact text, ~200-500 chars
-    field_summaries: dict[str, str]  # cached per-field summaries
-
+    # Enriched LinkedIn data
+    linkedin_enriched: dict
+    # Shadow fields — LinkedIn-sourced values, kept separate from user upload
+    enriched_organization: str
+    enriched_title: str
+    # Arbitrary content from upload
+    content_fields: dict[str, str]
+    metadata: dict
+    # Content we fetched from non-LinkedIn URLs
+    fetched_content: dict[str, str]
+    # What the LLM judge reads
+    profile_card: str
+    field_summaries: dict[str, str]
     # Pipeline state
     enrichment_status: EnrichmentStatus  # pending / enriched / failed / skipped
+    enrichment_log: list[str]
+    enrichment_version: str   # "" | "v0-legacy" | "v1" | "v2"
+    # Every verify_match decision — structured, auditable
+    verification_decisions: list[dict]   # [{linkedin_url, score, anchors_positive,
+                                         #   anchors_negative, decision, reason, ...}]
 ```
 
-### Dataset (`enrichment/models.py`)
+## File structure
 
-```python
-@dataclass
-class Dataset:
-    id: str
-    name: str
-    created_at: str
-    source_file: str
-    total_rows: int
-    profiles: list[Profile]
-    field_mappings: list[dict]       # schema detection results
-    searchable_fields: list[str]     # which text fields are available
-    enrichment_stats: dict           # {resolved, enriched, failed, skipped, ...}
+```
+enrichment/
+├── pipeline.py          # run_enrichment(dataset, strategy="v1"|"v2")
+├── identity.py          # Brave+Serper search, tied-candidate arbitration
+├── enrichers.py         # EnrichLayer + _verify_match (tiered, slug-aware)
+├── arbiter.py           # Gemini-as-judge for ambiguous candidate ties
+├── fetchers.py          # GitHub, website, Twitter, Google Drive content
+├── summarizer.py        # profile_card builder
+├── dedup.py             # cross-dataset duplicate detection
+├── costs.py             # cost estimation
+├── schema.py            # schema auto-detection for uploads
+├── models.py
+├── _retry.py            # exponential backoff helper for transient errors
+├── nicknames.py         # ~100 canonical/nickname pairs
+├── v2/                  # source-agnostic pipeline (see Two strategies above)
+├── eval/
+│   ├── coverage_report.py      # CLI: status / cohort / source / cost breakdown
+│   ├── wrong_person_audit.py   # CLI: scan enriched profiles for name-mismatches
+│   ├── replay.py               # re-score stored logs under modified configs
+│   ├── cohort_analysis.py      # per-cohort hit rates + recommendations
+│   ├── cost_simulator.py       # project cost of a proposed pipeline spec
+│   ├── groundtruth.py          # load hand-labeled CSV, compute P/R/F1
+│   └── arbiter_ab.py           # A/B harness for the arbiter
+├── README.md            # this file
+├── SETUP.md             # API key setup for each fetcher
+└── INTAKE_SPEC.md       # schema-detection design spec
 ```
 
-## How the v2 Search System Should Use This
+## Eval harness
 
-### Loading profiles for scoring
-
-```python
-from enrichment.pipeline import EnrichmentPipeline
-
-pipeline = EnrichmentPipeline(data_dir="./datasets")
-
-# List available datasets
-datasets = pipeline.list_datasets()
-# → [{"id": "abc123", "name": "EAG Contacts", "profiles": 105, ...}]
-
-# Load a dataset
-ds = pipeline.load("abc123")
-
-# Each profile has a profile_card ready for the LLM judge
-for p in ds.profiles:
-    print(p.profile_card)  # compact text for scoring
-```
-
-### Converting to v2 Profile format
-
-The enrichment `Profile` has more fields than the v2 `Profile` (enrichment status, links, etc.). To convert:
-
-```python
-from search.models import Profile as V2Profile, ProfileIdentity, ProfileField
-
-def to_v2(p):
-    """Convert enrichment Profile → v2 Profile for scoring."""
-    fields = {}
-    for name, text in p.content_fields.items():
-        ftype = classify_field_type(name, text)  # from summarizer.py
-        fields[name] = ProfileField(value=text, type=ftype)
-    if p.linkedin_enriched.get("context_block"):
-        fields["linkedin"] = ProfileField(
-            value=p.linkedin_enriched["context_block"], type="linkedin"
-        )
-    for name, text in p.fetched_content.items():
-        fields[f"fetched_{name}"] = ProfileField(value=text, type="self_reported")
-
-    return V2Profile(
-        id=p.id,
-        identity=ProfileIdentity(
-            name=p.name, email=p.email, linkedin_url=p.linkedin_url
-        ),
-        fields=fields,
-        raw_text=p.profile_card,  # pre-summarized
-    )
-```
-
-### What `profile_card` contains
-
-The profile card is what the LLM judge reads. It's built by `summarizer.py`:
-
-- **Header**: `Name | Title at Organization`
-- **First-person fields** (call notes, transcripts): kept mostly verbatim (truncated at 600 chars)
-- **Expert assessments** (recommendations, evaluations): kept mostly verbatim
-- **LinkedIn**: structured summary (headline, top 5 roles)
-- **Self-reported text** (pitches, bios, essays): compressed to one line ("Pitch: Building AI-enabled biological design tools.")
-
-Fields are ordered by priority: first-person > expert > linkedin > self-reported.
-
-### Searchable fields per dataset
-
-Each dataset may have different content fields depending on what was uploaded:
-
-```python
-ds.searchable_fields
-# Dataset A: ["linkedin", "call_notes", "meeting_transcript"]
-# Dataset B: ["linkedin", "pitch", "problem", "author_assessment"]
-# Dataset C: ["linkedin", "bio", "interview_notes", "key_publications"]
-```
-
-The search system should handle dynamic fields — don't hardcode field names.
-
-## Web App API (`upload_web.py`)
-
-Flask app at `localhost:5556`.
-
-| Endpoint | Method | Purpose |
-|----------|--------|---------|
-| `/` | GET | Upload & management UI |
-| `/api/detect-schema` | POST | Upload file, get auto-detected schema |
-| `/api/prepare` | POST | Parse file with confirmed mappings, get cost estimate |
-| `/api/enrich` | POST | Start enrichment (identity resolution + LinkedIn + links + cards) |
-| `/api/embed-only` | POST | Skip enrichment, just build profile cards from existing content |
-| `/api/reenrich` | POST | Re-run enrichment on existing dataset (resets all statuses) |
-| `/api/job/<id>` | GET | Poll enrichment job progress |
-| `/api/job/<id>/cancel` | POST | Cancel running enrichment |
-| `/api/datasets` | GET | List all datasets |
-| `/api/dataset/<id>` | GET | Get full dataset with all profiles |
-| `/api/dataset/<id>` | DELETE | Delete a dataset |
-
-## Environment Variables
+### Coverage report
 
 ```bash
-BRAVE_API_KEY          # Required for identity resolution + Twitter bio fetching
-ENRICHLAYER_API_KEY    # Required for LinkedIn profile enrichment
-ANTHROPIC_API_KEY      # Required for LLM-based summarization (optional)
-GWS_CONFIG_DIR         # Google Drive config (default: ~/.config/gws-personal)
+python3 -m enrichment.eval.coverage_report \
+  --account-id <id> --dataset-id <id>
 ```
 
-## Storage
+Outputs: status distribution, cohort breakdowns (email × org), source contribution (linkedin / website / twitter / fetched_content), `enrichment_version` distribution, cost (queries + LinkedIn calls), log-pattern counts.
 
-- **`datasets/<id>.json`** — dataset metadata + all profiles as JSON
-- **`uploads/`** — temporary uploaded CSV/JSON files
+### Wrong-person audit
 
-JSON files are sufficient for local use with hundreds to low thousands of profiles. Switch to SQLite when: multi-user, >10K profiles, or concurrent writes needed.
+```bash
+python3 -m enrichment.eval.wrong_person_audit \
+  --account-id <id> --dataset-id <id>
+```
+
+Flags enriched profiles whose name doesn't match the LinkedIn full name. Uses `nicknames.py` to suppress Matt↔Matthew-style false positives.
+
+### Offline replay
+
+```python
+from enrichment.eval.replay import ReplayConfig, replay_dataset
+
+result = replay_dataset(profiles, ReplayConfig(
+    name_strong_score=3, org_mismatch_penalty=-1, require_anchors=1
+))
+# → {"would_accept": N, "would_reject": M, "flips": [...]}
+```
+
+No API calls. Lets you test "what if we tightened the threshold?" against stored logs.
+
+### Ground truth
+
+```bash
+# Export stratified sample for hand-labeling
+python3 -m tools.export_groundtruth_sample \
+  --account-id <id> --dataset-id <id> --n 50 \
+  --out plans/groundtruth_<dataset>.csv
+
+# After filling in the true_* columns by hand, score against it:
+python3 -m enrichment.eval.coverage_report \
+  --account-id <id> --dataset-id <id> \
+  --groundtruth plans/groundtruth_<dataset>.csv
+```
+
+## Decontamination
+
+Legacy rows enriched before the verification fixes shipped may have
+LinkedIn-sourced junk in `organization` / `title`:
+
+```bash
+python3 -m tools.decontaminate_legacy_profiles \
+  --account-id <id> [--dataset-id <id>] [--dry-run]
+```
+
+- Populates `enriched_organization` / `enriched_title` shadow fields
+- Blanks user-facing `organization` / `title` when they equal the LinkedIn value and the audit flags the match as wrong-person
+
+## Environment variables
+
+See `enrichment/SETUP.md` for details on each.
+
+```
+BRAVE_API_KEY          # identity resolution (Brave Search)
+SERPER_API_KEY         # identity resolution fallback (Google via Serper)
+ENRICHLAYER_API_KEY    # LinkedIn profile enrichment
+GOOGLE_API_KEY         # Gemini (summarizer, arbiter, LLM judge)
+```
+
+All are optional at the account level — platform-level defaults in Vercel env vars are auto-seeded into accounts on first login (`cloud/auth.py::seed_env_keys`).

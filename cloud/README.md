@@ -1,93 +1,105 @@
 # Cloud Deployment
 
-Vercel + Supabase deployment of People Search. See [CLOUD_SPEC.md](../CLOUD_SPEC.md) for the full spec.
+Vercel (serverless Python) + Supabase (Postgres + JSONB) deployment of People Search.
 
 ## Setup
 
 ### 1. Apply the schema
 
-Paste `schema.sql` into the Supabase SQL Editor and run it.
+Paste `cloud/schema.sql` into the [Supabase SQL Editor](https://supabase.com/dashboard/project/bbvwebtkypytvrhaeqey/sql/new) and run it. Schema includes RLS policies for all tables.
 
-### 2. Create an account
+### 2. Apply outstanding migrations
+
+Migrations live in `cloud/migrations/` and are append-only. Run them in order:
+
+- `002_enrichment_version.sql` — adds `enrichment_version` column
+- `003_add_enriched_identity_fields.sql` — adds `enriched_organization` / `enriched_title` shadow fields
+- `004_verification_decisions.sql` — adds `verification_decisions JSONB` for structured verifier logs
+
+### 3. Create an account
 
 ```sql
 SELECT create_account('YourOrgName', 'your-password');
 ```
 
-### 3. Deploy to Vercel
+New accounts inherit API keys from Vercel env vars on first login (see `cloud/auth.py::seed_env_keys`).
+
+### 4. Deploy
 
 ```bash
 cd projects/candidate-search-tool
-vercel login
-vercel link
+vercel login && vercel link
 vercel env add SUPABASE_URL
 vercel env add SUPABASE_SERVICE_KEY
 vercel env add SESSION_SECRET
+# Platform-level keys (auto-seeded into new accounts):
+vercel env add BRAVE_API_KEY
+vercel env add SERPER_API_KEY
+vercel env add ENRICHLAYER_API_KEY
+vercel env add GOOGLE_API_KEY        # Gemini
 vercel deploy
 ```
 
-### 4. Local development
-
-```bash
-pip install -r requirements.txt
-# Set env vars, then run with vercel dev or use local Flask app
-```
-
-## What's implemented
-
-| Workstream | Status |
-|---|---|
-| WS1: Supabase schema + data layer | Done |
-| WS2: Vercel deployment | Done |
-| WS3: Account system | Done |
-| WS4: Airtable integration | Done |
-| WS5: Frontend polish | Not started |
+Auto-deploy from GitHub `main` branch is enabled.
 
 ## Architecture
 
 ```
-candidate-search-tool/          # Vercel project root
-├── vercel.json                 # Runtime config + rewrites
-├── requirements.txt            # Python dependencies
-├── public/
-│   └── index.html              # Frontend (extracted from Flask app)
+candidate-search-tool/
+├── vercel.json          # runtime config + /api/* → /api/* rewrites
+├── requirements.txt
+├── shared/ui.html       # source of truth for the frontend
+├── build.sh             # syncs shared/ui.html → cloud/public/ + public/
 ├── cloud/
-│   ├── schema.sql              # Postgres migration
-│   ├── auth.py                 # Session cookies (HMAC-SHA256)
-│   ├── storage/
-│   │   └── supabase.py         # Storage adapter (18 methods)
-│   └── api/                    # 30 Vercel Python API routes
-│       ├── _helpers.py          # Shared utilities
-│       ├── auth_login.py        # POST /api/auth_login
-│       ├── auth_logout.py       # POST /api/auth_logout
-│       ├── keys.py              # GET/POST /api/keys
-│       ├── detect_schema.py     # POST /api/detect_schema
-│       ├── prepare.py           # POST /api/prepare
-│       ├── enrich.py            # POST /api/enrich (chunked)
-│       ├── embed_only.py        # POST /api/embed_only
-│       ├── reenrich.py          # POST /api/reenrich (chunked)
-│       ├── reenrich_estimate.py # POST /api/reenrich_estimate
-│       ├── datasets.py          # GET /api/datasets
-│       ├── dataset/[id].py      # GET/DELETE /api/dataset/:id
-│       ├── profile/[id].py      # GET /api/profile/:id
-│       ├── job/[id].py          # GET/POST /api/job/:id
-│       ├── airtable.py          # Airtable connect/import/writeback
-│       └── search/              # Search API routes
-│           ├── score.py         # POST (scoring, 900s timeout)
-│           ├── feedback.py      # POST
-│           ├── chat.py          # POST (questioning)
-│           ├── global_rules.py  # GET/POST
-│           ├── searches.py      # GET (list)
-│           ├── searches/[id].py # GET (detail)
-│           └── searches/[id]/   # results, synthesize, rerun, rename
-├── enrichment/                  # Core pipeline (unchanged)
-└── search/                      # Core search (unchanged)
+│   ├── schema.sql        # canonical schema (RLS + helper RPCs)
+│   ├── migrations/       # append-only SQL migrations
+│   ├── auth.py           # session cookies + per-account keys + env-seed
+│   ├── storage/supabase.py   # storage adapter (account-scoped)
+│   └── public/index.html     # bundled frontend
+├── api/                 # Vercel Python routes
+└── public/index.html    # served by Vercel
 ```
+
+## API surface
+
+### Auth
+- `POST /api/auth_login` — name + password → signed cookie
+- `POST /api/auth_logout`
+- `GET /api/keys` — returns account's keys + `platform_defaults` array (which keys have env fallbacks)
+- `POST /api/keys` — override platform defaults
+
+### Datasets + enrichment
+- `POST /api/detect_schema` — upload file, auto-detect columns
+- `POST /api/prepare` — parse with confirmed mappings + cost estimate
+- `POST /api/enrich` — **phased chunked** enrichment: `enriching` → `fetching` → `carding`. Frontend polls `pollJob` which re-invokes on `status=running`. Survives function restarts via `jobs.stats.phase`.
+- `POST /api/embed_only` — skip enrichment, just build profile cards
+- `POST /api/reenrich` — re-run on existing dataset (resets statuses)
+- `POST /api/reenrich_estimate` — cost estimate before `/api/reenrich`
+- `GET /api/datasets` — list
+- `GET/DELETE /api/dataset/[id]` — detail / delete (CASCADE to profiles)
+- `GET /api/profile/[id]`
+- `GET /api/job/[id]` — poll progress
+- `POST /api/job/[id]/cancel`
+
+### Search
+- `POST /api/search/score` — score profiles against query (up to 900s timeout)
+- `POST /api/search/searches/[id]/rerun` — re-run after feedback synthesis
+- `POST /api/search/searches/[id]/synthesize` — LLM proposes rule/exemplar updates
+- `POST /api/search/searches/[id]/rename`
+- `GET /api/search/searches/[id]` / `[id]/results`
+- `POST /api/search/feedback` — thumbs-up/down + reason
+- `POST /api/search/chat` — clarifying questions before first run
+- `GET/POST /api/search/global_rules`
+
+### Airtable
+- `POST /api/airtable/connect` / `import` / `writeback`
 
 ## Key design decisions
 
-- **Chunked enrichment**: Each `/api/enrich` call processes 10 profiles and returns. Frontend loops until done. Progress survives function restarts via Supabase job/profile state.
-- **Rewrites**: `vercel.json` maps `/api/*` → `/cloud/api/*` so API files stay organized under `cloud/`.
-- **Auth**: HMAC-SHA256 signed session cookies. No external auth deps.
-- **Storage**: Service key bypasses RLS; adapter filters by account_id. RLS still protects direct DB access.
-- **Scoring**: Runs synchronously (up to 900s). Works for datasets under ~500 profiles.
+- **Chunked enrichment**: `/api/enrich` processes 50 profiles per invocation during the `enriching` phase, 20 during `fetching`, then does `carding` in one pass. Phase tracked in `jobs.stats.phase` so the flow resumes across function restarts and frontend polls.
+- **Rewrites**: `vercel.json` maps `/api/*` → `api/*` so API files sit at the project root but stay organized.
+- **Auth**: HMAC-SHA256 signed session cookies, 7-day TTL. No external auth deps.
+- **Storage**: service key bypasses RLS; the adapter filters by `account_id` in every query. RLS still protects direct anon-key access.
+- **Per-account keys + platform fallback**: each account can override keys in Settings. Missing keys fall through to Vercel env vars. `seed_env_keys` copies env values into the account on login so new users work out of the box.
+- **Scoring**: synchronous, up to 900s. Works for datasets under ~5K profiles.
+- **Deep linking**: `#search/ID` hash routing; the frontend auto-navigates on page load (works across the login flow).
