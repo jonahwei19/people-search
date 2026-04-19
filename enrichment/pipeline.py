@@ -411,6 +411,38 @@ class EnrichmentPipeline:
             if not value or not str(value).strip():
                 continue
             value = str(value).strip()
+            # Postgres TEXT/JSONB rejects \x00 (and some other C0 controls) with
+            # error 22P05. Strip them defensively so uploads never hit the
+            # "unsupported Unicode escape sequence" error — regardless of source.
+            value = "".join(
+                c for c in value
+                if c in "\t\n\r" or (c >= " " and c != "\x7f")
+            )
+            if not value:
+                continue
+
+            # Normalize URL-shaped fields: `@handle` → twitter URL, bare
+            # `www.linkedin.com/...` → https://... . Prevents the app from
+            # rendering @handle as a relative URL (which prepends the app's
+            # hostname) and keeps identity-resolution signals well-formed.
+            if mapping.field_type == FieldType.LINK_TWITTER and value:
+                v = value.strip()
+                if v.startswith("@") and " " not in v:
+                    value = "https://twitter.com/" + v[1:]
+                elif v.lower().startswith("www.") and ("twitter.com" in v.lower() or "x.com" in v.lower()):
+                    value = "https://" + v
+                elif v.upper() in ("NA", "N/A", "NONE"):
+                    value = ""
+            elif mapping.field_type == FieldType.IDENTITY_LINKEDIN and value:
+                v = value.strip()
+                if v.lower().startswith("www.linkedin.com"):
+                    value = "https://" + v
+                elif v.lower().startswith("linkedin.com"):
+                    value = "https://www." + v
+                elif v.upper() in ("NA", "N/A", "NONE"):
+                    value = ""
+            if not value:
+                continue
 
             match mapping.field_type:
                 case FieldType.IDENTITY_NAME:
