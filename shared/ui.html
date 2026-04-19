@@ -1914,7 +1914,7 @@ function exportSearchCSV() {
   const cols = ['rank','name','score','reasoning','email','linkedin_url'];
   const escape = v => '"' + String(v||'').replace(/"/g,'""') + '"';
   const rows = [cols.join(',')];
-  results.forEach((r,i) => rows.push([i+1, escape(r.name), r.score, escape(r.reasoning), escape(r.email), escape(r.linkedin_url)].join(',')));
+  results.slice(0, 20).forEach((r,i) => rows.push([i+1, escape(r.name), r.score, escape(r.reasoning), escape(r.email), escape(r.linkedin_url)].join(',')));
   const blob = new Blob([rows.join('\n')], {type:'text/csv'});
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
