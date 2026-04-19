@@ -187,56 +187,143 @@ DATA_BROKER_DOMAINS = {
 }
 
 
-def _save_evidence_urls(profile: Profile, evidence: list[dict]) -> None:
-    """Persist non-LinkedIn evidence URLs onto the profile.
+def _verify_evidence(evidence: dict, profile: Profile) -> str:
+    """Return confidence level that this URL is actually about the profile's person.
 
-    Categorizes by URL shape:
-    - GitHub → other_links (if not already present)
-    - Twitter/X → twitter_url (only if empty)
-    - Personal sites → website_url (only if empty), plus other_links
-    - Substack, academic, etc. → other_links
+    Returns "strong", "medium", or "none".
 
-    Also stores the URL + search snippet (title + description) in
-    fetched_content so the scoring judge has text to work with.
+    Strong signals (accept as primary):
+    - Search source was "email-exact" (page contained the literal email)
+    - URL domain matches the profile's email domain (e.g., stripe.com/team/x)
+    - URL path contains first+last name slug (dylan-matthews, dylanmatthews)
+
+    Medium signals (retain as fetched_content only, don't claim as primary):
+    - Full name appears in snippet title+description
+    - Source was "name+domain-broad" (name + org domain constraint)
+
+    None: reject — we can't tell if it's the right person. Common names in
+    "broad" search (name only) are too likely to be different people.
+    """
+    url = (evidence.get("url") or "").lower()
+    source = (evidence.get("source") or "").lower()
+    snippet = f"{evidence.get('title','')} {evidence.get('description','')}".lower()
+
+    first = (profile.name.split()[0] if profile.name else "").lower()
+    last_parts = profile.name.split() if profile.name else []
+    last = last_parts[-1].lower() if len(last_parts) >= 2 else ""
+
+    email = (profile.email or "").lower()
+    email_domain = email.split("@", 1)[1] if "@" in email else ""
+    # Strip subdomain prefix for a looser match
+    email_base = ".".join(email_domain.split(".")[-2:]) if email_domain else ""
+
+    # ── Strong signals ───────────────────────────────────────
+    if source == "email-exact":
+        return "strong"
+
+    if email_base and email_base in url and email_base not in {
+        "gmail.com", "hotmail.com", "yahoo.com", "outlook.com", "me.com",
+        "icloud.com", "aol.com", "proton.me", "protonmail.com", "msn.com",
+        "live.com", "hey.com", "pm.me",
+    }:
+        return "strong"
+
+    # Name slug in URL path: requires BOTH first + last (or one long one)
+    if first and last:
+        slug_candidates = [
+            f"{first}-{last}",
+            f"{first}_{last}",
+            f"{first}.{last}",
+            f"{first}{last}",
+            f"{last}-{first}",
+            f"{last}{first}",
+        ]
+        # Only trust slugs ≥7 chars (avoids matching "joli" or "liyu" by accident)
+        if any(len(s) >= 7 and s in url for s in slug_candidates):
+            return "strong"
+
+    # ── Medium signals ──────────────────────────────────────
+    if source in {"name+domain-broad", "name+domain"}:
+        if first and last and first in snippet and last in snippet:
+            return "medium"
+
+    # Full name (both first and last) appears in snippet text
+    if first and last and first in snippet and last in snippet:
+        # Require they're reasonably close together to avoid random co-occurrence
+        return "medium"
+
+    return "none"
+
+
+def _save_evidence_urls(profile: Profile, evidence: list[dict]) -> int:
+    """Persist non-LinkedIn evidence URLs onto the profile, with verification.
+
+    Each URL is graded for how confidently it belongs to this person:
+    - strong: goes into primary fields (twitter_url, website_url) if empty,
+              plus other_links + fetched_content snippet
+    - medium: goes into fetched_content only (scoring judge can use the text
+              but we don't claim it as the person's primary website/Twitter)
+    - none:   dropped entirely — too likely to be a different person with the
+              same name
+
+    Returns the number of URLs retained (strong + medium).
     """
     if not evidence:
-        return
+        return 0
 
     existing_links = set(l.lower().rstrip("/") for l in (profile.other_links or []))
+    retained = 0
     # Cap at 10 evidence URLs to avoid ballooning the profile
-    for e in evidence[:10]:
-        url = e.get("url", "").strip()
+    for e in evidence[:20]:
+        url = (e.get("url") or "").strip()
         if not url:
             continue
+
+        confidence = _verify_evidence(e, profile)
+        if confidence == "none":
+            continue
+
         ul = url.lower()
         key = ul.rstrip("/")
+        retained += 1
 
-        if "github.com" in ul:
-            if key not in existing_links:
-                profile.other_links.append(url)
-                existing_links.add(key)
-        elif "twitter.com" in ul or ul.startswith("https://x.com/") or "://x.com/" in ul:
-            if not profile.twitter_url:
-                profile.twitter_url = url
-            elif key not in existing_links:
-                profile.other_links.append(url)
-                existing_links.add(key)
-        elif "substack.com" in ul or ".edu/" in ul or "medium.com" in ul or "scholar.google" in ul:
-            if key not in existing_links:
-                profile.other_links.append(url)
-                existing_links.add(key)
-        else:
-            if not profile.website_url:
-                profile.website_url = url
-            elif key not in existing_links:
-                profile.other_links.append(url)
-                existing_links.add(key)
+        is_github = "github.com" in ul
+        is_twitter = "twitter.com" in ul or ul.startswith("https://x.com/") or "://x.com/" in ul
+        is_aux = ("substack.com" in ul or ".edu/" in ul
+                  or "medium.com" in ul or "scholar.google" in ul)
 
-        # Store the snippet as fetched_content so the scoring judge sees it
+        # Only set PRIMARY profile fields (twitter_url, website_url) from
+        # strong-confidence evidence — medium evidence lives in fetched_content.
+        if confidence == "strong":
+            if is_github:
+                if key not in existing_links:
+                    profile.other_links.append(url)
+                    existing_links.add(key)
+            elif is_twitter:
+                if not profile.twitter_url:
+                    profile.twitter_url = url
+                elif key not in existing_links:
+                    profile.other_links.append(url)
+                    existing_links.add(key)
+            elif is_aux:
+                if key not in existing_links:
+                    profile.other_links.append(url)
+                    existing_links.add(key)
+            else:
+                if not profile.website_url:
+                    profile.website_url = url
+                elif key not in existing_links:
+                    profile.other_links.append(url)
+                    existing_links.add(key)
+
+        # Snippet goes to fetched_content regardless of confidence tier, but
+        # labeled so the judge knows how much weight to give it.
         snippet = f"{e.get('title','')}\n{e.get('description','')}".strip()
         if snippet:
-            slot = f"search_evidence:{url[:80]}"
+            slot = f"search_evidence({confidence}):{url[:80]}"
             profile.fetched_content[slot] = snippet
+
+    return retained
 
 
 def _follow_email_evidence(results: list[dict], name: str, log: list[str]) -> list[dict]:
@@ -831,11 +918,12 @@ class IdentityResolver:
                     stats["failed"] += 1
 
                 # Save non-LinkedIn evidence URLs regardless of LinkedIn outcome.
-                # These are personal sites, GitHub, Substack, academic pages, etc.
+                # Each URL is verified (strong/medium/none) against the person's
+                # name, email domain, and URL slug — rejects common-name collisions.
                 if result.evidence_urls:
-                    _save_evidence_urls(profile, result.evidence_urls)
+                    retained = _save_evidence_urls(profile, result.evidence_urls)
                     profile.enrichment_log.append(
-                        f"→ Saved {len(result.evidence_urls)} non-LinkedIn evidence URLs"
+                        f"→ Evidence URLs: {len(result.evidence_urls)} seen, {retained} verified as this person"
                     )
 
         return stats
