@@ -326,12 +326,71 @@ def _save_evidence_urls(profile: Profile, evidence: list[dict]) -> int:
     return retained
 
 
-def _follow_email_evidence(results: list[dict], name: str, log: list[str]) -> list[dict]:
+# Loud/unreliable broker domains we never fetch. Snippets we already see
+# (cheap) can still be mined; this set only gates the expensive HTML fetch
+# and the attribution inference that comes with "the email was on the page,
+# so any LinkedIn in the HTML belongs to this person".
+BROKER_FETCH_SKIP = {
+    "spokeo.com", "beenverified.com", "whitepages.com", "radaris.com",
+    "truepeoplesearch.com", "peekyou.com", "rocketreach.com", "clearbit.com",
+    "zoominfo.com", "apollo.io", "contactout.com", "signalhire.com",
+    "lusha.com", "hunter.io", "snov.io", "skrapp.io", "uplead.com",
+    "leadiq.com", "seamless.ai", "nymeria.io",
+}
+
+# Academic / government / nonprofit TLDs that are safe to fetch (org-site
+# team pages, faculty pages, etc).
+_SAFE_TLDS = (".edu", ".edu/", ".gov", ".gov/", ".ac.uk", ".ac.uk/")
+
+
+def _is_safe_followup_domain(url: str, email_domain: str | None) -> bool:
+    """Decide whether we should fetch this page to extract LinkedIn URLs.
+
+    Allowed:
+    - pages on the profile's own email domain (the person's org site)
+    - .edu / .gov / .ac.uk pages
+    - .org pages that aren't loud broker domains
+
+    Denied:
+    - known broker domains (spokeo, beenverified, rocketreach, etc.)
+    """
+    url_lower = (url or "").lower()
+    if not url_lower:
+        return False
+
+    # Never fetch known broker domains — noisy and cost-inflating.
+    if any(d in url_lower for d in BROKER_FETCH_SKIP):
+        return False
+
+    # Person's own email domain is always fair game.
+    if email_domain and email_domain not in PERSONAL_DOMAINS:
+        if email_domain in url_lower:
+            return True
+
+    # Academic / government pages.
+    if any(t in url_lower for t in _SAFE_TLDS):
+        return True
+
+    # Generic .org pages (nonprofit / org team pages) — safe-ish, still
+    # subject to the broker-skip above.
+    if ".org/" in url_lower or url_lower.endswith(".org"):
+        return True
+
+    return False
+
+
+def _follow_email_evidence(
+    results: list[dict],
+    name: str,
+    log: list[str],
+    email_domain: str | None = None,
+) -> list[dict]:
     """Follow email evidence: fetch pages where the email appeared, extract LinkedIn URLs.
 
-    This is the key step the full pipeline does — broker pages and org websites
-    often contain the person's LinkedIn URL in their HTML even when it's not
-    in the search snippet.
+    This is the key step the full pipeline does — org websites and academic
+    pages often contain the person's LinkedIn URL in their HTML even when it's
+    not in the search snippet. We deliberately skip loud broker domains to
+    avoid cost blow-ups and inflated false-positive attribution.
     """
     found = []
     seen_li = set()
@@ -346,21 +405,31 @@ def _follow_email_evidence(results: list[dict], name: str, log: list[str]) -> li
         if "linkedin.com" in url_lower:
             continue
 
-        # Check snippet for LinkedIn URL first (no fetch needed)
+        # Check snippet for LinkedIn URL first (no fetch needed). Snippets are
+        # free to consume — the broker-skip only applies to HTML fetches.
         li_match = re.search(r'https?://(?:\w+\.)?linkedin\.com/in/[\w-]+/?', desc)
         if li_match:
             li_url = li_match.group(0).rstrip("/")
             if li_url not in seen_li:
                 seen_li.add(li_url)
                 log.append(f"    LinkedIn from snippet: {li_url}")
-                found.append({"title": title, "url": li_url, "description": desc, "_email_evidence": True})
+                # Snippet-based LinkedIn from the email-exact search is
+                # ground-truth-ish, so tag as "exact".
+                found.append({
+                    "title": title,
+                    "url": li_url,
+                    "description": desc,
+                    "_email_evidence": True,
+                    "_email_evidence_type": "exact",
+                })
             continue
 
-        # Fetch the page — the email was on it, so it's about this person
-        is_broker = any(d in url_lower for d in DATA_BROKER_DOMAINS)
-        page_type = "broker" if is_broker else "page"
-        log.append(f"    Fetching {page_type}: {url[:80]}")
+        # Only fetch pages we trust enough to infer identity from.
+        if not _is_safe_followup_domain(url, email_domain):
+            log.append(f"    Skipping non-safe domain: {url[:80]}")
+            continue
 
+        log.append(f"    Fetching page: {url[:80]}")
         html = _fetch_page(url, timeout=15)
         if not html:
             log.append(f"    → fetch failed")
@@ -372,8 +441,14 @@ def _follow_email_evidence(results: list[dict], name: str, log: list[str]) -> li
             li_url = li_url.rstrip("/")
             if li_url not in seen_li:
                 seen_li.add(li_url)
-                log.append(f"    LinkedIn from {page_type} HTML: {li_url}")
-                found.append({"title": f"via {url_lower.split('/')[2]}", "url": li_url, "description": title, "_email_evidence": True})
+                log.append(f"    LinkedIn from page HTML: {li_url}")
+                found.append({
+                    "title": f"via {url_lower.split('/')[2]}",
+                    "url": li_url,
+                    "description": title,
+                    "_email_evidence": True,
+                    "_email_evidence_type": "exact",
+                })
 
     return found
 
@@ -476,6 +551,11 @@ class IdentityResolver:
         # academic pages) that the scoring judge can use.
         evidence_urls: list[dict] = []
         evidence_seen: set = set()
+        # Non-LinkedIn results bucketed by search label. Used by the email-exact
+        # and org-site paths to run `_follow_email_evidence` against the
+        # actual pages the search returned — the feature was dead before
+        # because `search()` returned LinkedIn-only.
+        non_li_by_label: dict[str, list[dict]] = {}
 
         def _record_evidence(results: list[dict], source: str) -> None:
             for r in results or []:
@@ -500,6 +580,16 @@ class IdentityResolver:
                 })
 
         def search(query: str, label: str):
+            """Run a query and return just the LinkedIn-profile results.
+
+            Non-LinkedIn results are captured as fallback evidence via
+            `_record_evidence` AND stashed into `non_li_by_label[label]`
+            so that callers who want to follow them (org-site HTML,
+            broker snippets, etc.) can retrieve them from that dict
+            rather than re-running the query. This is what revives
+            `_follow_email_evidence` (which used to be dead because
+            `search()` only returned LinkedIn).
+            """
             if query in queries_run:
                 return []
             queries_run.add(query)
@@ -507,34 +597,52 @@ class IdentityResolver:
             log.append(f"  Search ({label}): {query}")
             results = _web_search(query, self.brave_key, self.serper_key)
             li_results = [r for r in results if _is_linkedin_profile_url(r["url"])]
-            # Capture non-LinkedIn URLs as fallback evidence
-            _record_evidence([r for r in results if not _is_linkedin_profile_url(r["url"])], label)
+            non_li_results = [r for r in results if not _is_linkedin_profile_url(r["url"])]
+            # Capture non-LinkedIn URLs as fallback evidence AND store for
+            # targeted follow-up from callers (see email-exact / org-site).
+            _record_evidence(non_li_results, label)
+            non_li_by_label.setdefault(label, []).extend(non_li_results)
             log.append(f"    → {len(results)} results, {len(li_results)} LinkedIn profiles")
             return li_results
 
         MAX_SEARCH_TIME = 10  # seconds per individual search query timeout
 
         # ── Step 1: Email evidence (ground truth) ──
-        # Search for literal email — pages containing it are ground truth about this person.
-        # Broker pages (ContactOut, RocketReach) often have LinkedIn URL in their snippet.
+        # Two queries that used to be conflated, now carefully separated:
+        #   email-exact:     literal "{email}" — pages that actually contain the
+        #                    email. LinkedIn results here are ground-truth-ish
+        #                    and deserve the +20 email-evidence bonus.
+        #   email-username:  "{email_local}" linkedin OR researchgate — a broad
+        #                    sweep that returns 5–10 unrelated LinkedIns for
+        #                    common first-name locals (dan, ari, john, milica).
+        #                    These are NOT ground truth; they get ordinary
+        #                    name/slug/org scoring only.
         email_verified_company = ""
+        email_domain_for_follow = ""
         if ctx.get("email"):
             email = ctx["email"]
+            email_domain_for_follow = email.split("@", 1)[1].lower() if "@" in email else ""
             email_results = search(f'"{email}"', "email-exact")
 
-            # Also search with email username on LinkedIn/social sites
+            # Also search with email username on LinkedIn/social sites.
+            # NOTE: this query's LinkedIn results are NOT email evidence —
+            # a "dan" query returns every Dan on the Internet.
             email_local = email.split("@")[0]
             broad_email = search(f'"{email_local}" linkedin OR researchgate', "email-username")
 
-            for r in email_results + broad_email:
-                # Check if snippet contains a LinkedIn URL (broker pages often do)
+            # ── email-exact results: legitimate email evidence ──
+            for r in email_results:
+                # LinkedIn URL extracted from the snippet of a page that
+                # contained the literal email address. Tag as exact evidence.
                 li_match = re.search(r'https?://(\w+\.)?linkedin\.com/in/[\w-]+/?', r.get("description", ""))
                 if li_match:
                     li_url = li_match.group(0).rstrip("/")
-                    log.append(f"    LinkedIn URL found in snippet: {li_url}")
+                    log.append(f"    LinkedIn URL found in email-exact snippet: {li_url}")
                     all_candidates.append({
                         "title": r["title"], "url": li_url,
-                        "description": r["description"], "_email_evidence": True,
+                        "description": r["description"],
+                        "_email_evidence": True,
+                        "_email_evidence_type": "exact",
                     })
 
                 # Extract company from broker page titles
@@ -547,7 +655,6 @@ class IdentityResolver:
                 ])
                 if is_broker and " | " in title:
                     company_part = title.split(" | ")[1].strip()
-                    # Clean out broker site names
                     for noise in ["ContactOut", "RocketReach", "SignalHire", "Lusha",
                                   "Apollo", "Hunter", "ZoomInfo", "LeadIQ"]:
                         company_part = company_part.replace(noise, "").strip(" |,-.")
@@ -555,20 +662,44 @@ class IdentityResolver:
                         email_verified_company = company_part
                         log.append(f"    Email-verified company from broker: {email_verified_company}")
 
-                # LinkedIn results from email search are high-trust
+                # Direct LinkedIn hit from the email-exact query is ground-truth.
                 if _is_linkedin_profile_url(r.get("url", "")):
                     r["_email_evidence"] = True
+                    r["_email_evidence_type"] = "exact"
                     all_candidates.append(r)
 
-            # Follow email evidence: fetch pages where the email appeared,
-            # extract LinkedIn URLs from HTML (broker pages, org websites, etc.)
-            if email_results:
-                log.append(f"  Following email evidence ({len(email_results)} pages)...")
-                evidence_candidates = _follow_email_evidence(email_results, name, log)
+            # ── email-username results: treat as ordinary broad hits ──
+            # No +20 bonus. Let name/slug/org signals decide.
+            for r in broad_email:
+                # Snippet may still contain a LinkedIn URL — harvest it as a
+                # plain candidate (no evidence flag).
+                li_match = re.search(r'https?://(\w+\.)?linkedin\.com/in/[\w-]+/?', r.get("description", ""))
+                if li_match:
+                    li_url = li_match.group(0).rstrip("/")
+                    log.append(f"    LinkedIn URL found in email-username snippet: {li_url}")
+                    all_candidates.append({
+                        "title": r["title"], "url": li_url,
+                        "description": r["description"],
+                        # no _email_evidence flag — this is a broad hit, not ground truth
+                    })
+
+                if _is_linkedin_profile_url(r.get("url", "")):
+                    # Intentionally NO _email_evidence flag. This was the bug.
+                    all_candidates.append(r)
+
+            # Follow email evidence: fetch pages where the email literally
+            # appeared to extract LinkedIn URLs from HTML (org websites,
+            # academic pages). `search()` now stores non-LinkedIn results
+            # keyed by label so we have actual pages to follow.
+            non_li_pages = non_li_by_label.get("email-exact", [])
+            if non_li_pages:
+                log.append(f"  Following email evidence ({len(non_li_pages)} non-LinkedIn pages)...")
+                evidence_candidates = _follow_email_evidence(
+                    non_li_pages, name, log,
+                    email_domain=email_domain_for_follow,
+                )
                 all_candidates.extend(evidence_candidates)
 
-                # SHORT-CIRCUIT: if email evidence directly yielded LinkedIn URLs,
-                # those are near-ground-truth. Score them immediately.
                 if evidence_candidates:
                     log.append(f"  Email evidence found {len(evidence_candidates)} LinkedIn URLs — high confidence")
 
@@ -610,17 +741,21 @@ class IdentityResolver:
                 f'"{first} {last}" "{ctx["email_domain"]}" site:linkedin.com/in', "name+email-domain"))
 
         # ── Step 7b: Scrape org website for LinkedIn URLs ──
-        # Org websites often list team members with LinkedIn links
+        # Org websites often list team members with LinkedIn links.
+        # `search()` already split out LinkedIn vs non-LinkedIn results, so
+        # we pull the non-LinkedIn pages from non_li_by_label["org-website"].
         if ctx.get("email_domain") and first and last:
-            org_domain = ctx["email"].split("@")[-1] if ctx.get("email") else ""
+            org_domain = ctx["email"].split("@")[-1].lower() if ctx.get("email") else ""
             if org_domain and org_domain not in PERSONAL_DOMAINS:
-                org_site_results = search(f'site:{org_domain} "{first} {last}"', "org-website")
-                if org_site_results:
-                    non_li = [r for r in org_site_results if "linkedin.com" not in r.get("url", "").lower()]
-                    if non_li:
-                        log.append(f"  Scraping org website ({org_domain}) for LinkedIn URLs...")
-                        org_evidence = _follow_email_evidence(non_li, name, log)
-                        all_candidates.extend(org_evidence)
+                _ = search(f'site:{org_domain} "{first} {last}"', "org-website")
+                org_non_li = non_li_by_label.get("org-website", [])
+                if org_non_li:
+                    log.append(f"  Scraping org website ({org_domain}) for LinkedIn URLs...")
+                    org_evidence = _follow_email_evidence(
+                        org_non_li, name, log,
+                        email_domain=email_domain_for_follow or org_domain,
+                    )
+                    all_candidates.extend(org_evidence)
 
         # ── Step 8: Name + org/keywords WITHOUT site:linkedin restriction ──
         # This catches pages that mention the person and link to their LinkedIn
@@ -637,7 +772,8 @@ class IdentityResolver:
             broad_results = search(f'"{first} {last}" "{ctx["email_domain"]}" linkedin', "name+domain-broad")
 
         if broad_results:
-            # Extract LinkedIn URLs from snippets
+            # Extract LinkedIn URLs from snippets (no email-evidence bonus —
+            # this is a broad query, not a literal-email match).
             for r in broad_results:
                 li_match = re.search(r'https?://(\w+\.)?linkedin\.com/in/[\w-]+/?', r.get("description", ""))
                 if li_match and not _is_linkedin_profile_url(r.get("url", "")):
@@ -646,11 +782,18 @@ class IdentityResolver:
                     all_candidates.append({"title": r["title"], "url": li_url, "description": r["description"]})
             all_candidates.extend(broad_results)
 
-            # Follow non-LinkedIn results — fetch pages, extract LinkedIn URLs from HTML
-            non_li_results = [r for r in broad_results if not _is_linkedin_profile_url(r.get("url", ""))]
-            if non_li_results:
-                log.append(f"  Following {len(non_li_results)} broad results for LinkedIn URLs...")
-                page_evidence = _follow_email_evidence(non_li_results, name, log)
+        # Follow non-LinkedIn results for each broad label — pull from
+        # non_li_by_label and subject to the safe-domain filter inside
+        # _follow_email_evidence (skips brokers, only fetches own-domain
+        # or academic/org pages).
+        for label in ("name+org-broad", "name+kw-broad", "name+domain-broad"):
+            non_li = non_li_by_label.get(label, [])
+            if non_li:
+                log.append(f"  Following {len(non_li)} {label} pages for LinkedIn URLs...")
+                page_evidence = _follow_email_evidence(
+                    non_li, name, log,
+                    email_domain=email_domain_for_follow,
+                )
                 all_candidates.extend(page_evidence)
 
         # ── Step 9: Broad name search (fallback) ──
@@ -705,10 +848,20 @@ class IdentityResolver:
             url = c.get("url", "")
             combined = title + " " + desc
 
-            # Email evidence (from step 1) — highest trust
-            if c.get("_email_evidence"):
+            # Email evidence (from step 1). Two tiers:
+            #   "exact"     — page contained the literal email. +20 (ground truth).
+            #   "proximity" — weaker signal (reserved). +5.
+            # Legacy _email_evidence=True defaults to "exact" so callers that
+            # predate this change aren't silently downgraded.
+            et = c.get("_email_evidence_type")
+            if et is None and c.get("_email_evidence"):
+                et = "exact"
+            if et == "exact":
                 score += 20
                 reasons.append("email-evidence(+20)")
+            elif et == "proximity":
+                score += 5
+                reasons.append("email-proximity(+5)")
 
             # Name match in title
             if first and first in title:
