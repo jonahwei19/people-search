@@ -41,6 +41,7 @@ if str(_root) not in sys.path:
     sys.path.insert(0, str(_root))
 
 from enrichment.models import Dataset, EnrichmentStatus, Profile  # noqa: E402
+from enrichment.nicknames import canonical_first_names  # noqa: E402
 
 
 # Post-nominals / credential suffixes we always strip before tokenizing.
@@ -87,11 +88,17 @@ def _is_initial(tok: str) -> bool:
     return len(t) == 1 and t.isalpha()
 
 
-def _match_token_pair(a: str, b: str) -> bool:
+def _match_token_pair(a: str, b: str, *, allow_nickname: bool = False) -> bool:
     """Does token `a` from uploaded name match token `b` from enriched?
 
     Allows initial-expansions in either direction (e.g., 'leonard' vs 'l'
     or 'l' vs 'leonard').
+
+    If `allow_nickname` is True, also treats nickname-equivalent names as
+    matches (e.g., 'matt' vs 'matthew', 'bob' vs 'robert'). Only the caller
+    should pass True for first-name positions — applying nickname expansion
+    to last names would produce false negatives (e.g. Matthew Lee vs Mark
+    Lee would incorrectly become "match" if we nicknamed the last token).
     """
     if a == b:
         return True
@@ -99,20 +106,35 @@ def _match_token_pair(a: str, b: str) -> bool:
         return True
     if _is_initial(b) and a.startswith(b.rstrip(".")):
         return True
+    if allow_nickname:
+        ca = canonical_first_names(a)
+        cb = canonical_first_names(b)
+        if ca and cb and (ca & cb):
+            return True
     return False
 
 
 def _token_overlap(a_tokens: list[str], b_tokens: list[str]) -> float:
-    """Jaccard-ish overlap allowing initial expansion."""
+    """Jaccard-ish overlap allowing initial expansion and first-name nicknames.
+
+    Nickname expansion is ONLY applied when matching a first token against
+    a first token — we never want to treat "Matthew Lee" vs "Mark Lee" as
+    nickname-match (they share a last name but Matt != Mark). In practice
+    this means the nickname rule only fires when the uploaded first token
+    could legitimately stand in for the enriched first token (or vice-versa).
+    """
     if not a_tokens or not b_tokens:
         return 0.0
     matched = 0
     used_b = set()
-    for ta in a_tokens:
+    for ai, ta in enumerate(a_tokens):
         for i, tb in enumerate(b_tokens):
             if i in used_b:
                 continue
-            if _match_token_pair(ta, tb):
+            # Nicknames only apply between the two "first name" positions.
+            # Position 0 on each side is the first name.
+            allow_nick = (ai == 0 and i == 0)
+            if _match_token_pair(ta, tb, allow_nickname=allow_nick):
                 matched += 1
                 used_b.add(i)
                 break
