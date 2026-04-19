@@ -134,13 +134,36 @@ class SupabaseStorage:
     # ── Profile operations ─────────────────────────────────────
 
     def save_profiles(self, dataset_id: str, profiles: list[Profile]) -> None:
-        """Bulk upsert profiles for a dataset."""
+        """Bulk upsert profiles for a dataset. Assigns person_id to each profile
+        that doesn't already have one, so rows matching an existing person in
+        this account are tagged with the same canonical id."""
         if not profiles:
             return
+        self._assign_person_ids(profiles)
         rows = [self._profile_to_row(p, dataset_id) for p in profiles]
         for i in range(0, len(rows), self.BATCH_SIZE):
             batch = rows[i : i + self.BATCH_SIZE]
             self.client.table("profiles").upsert(batch).execute()
+
+    def _assign_person_ids(self, profiles: list[Profile]) -> None:
+        """Compute person_id for any profile that lacks one.
+
+        Matches migration 005's grouping logic exactly so back-filled ids
+        equal newly-assigned ones. No DB round-trip required — the ids are
+        deterministic for (account_id, email|linkedin|name+org).
+        """
+        from enrichment.person_id import person_id_for
+        for p in profiles:
+            if getattr(p, "person_id", ""):
+                continue
+            p.person_id = person_id_for(
+                self.account_id,
+                email=p.email or "",
+                linkedin_url=p.linkedin_url or "",
+                name=p.name or "",
+                organization=p.organization or "",
+                fallback_row_id=p.id,
+            )
 
     def load_profiles(self, dataset_id: str) -> list[Profile]:
         """Load all profiles for a dataset (paginated)."""
@@ -407,6 +430,11 @@ class SupabaseStorage:
         decisions = getattr(profile, "verification_decisions", None)
         if decisions:
             row["verification_decisions"] = decisions
+        # person_id: added by cloud/migrations/005_person_id.sql. Conditional
+        # write for pre-migration environments.
+        pid = getattr(profile, "person_id", "")
+        if pid:
+            row["person_id"] = pid
         if dataset_id is not None:
             row["dataset_id"] = dataset_id
         return row
@@ -456,6 +484,7 @@ class SupabaseStorage:
             enrichment_version=row.get("enrichment_version") or "",
             enriched_organization=row.get("enriched_organization") or "",
             enriched_title=row.get("enriched_title") or "",
+            person_id=row.get("person_id") or "",
         )
 
     def _search_to_row(self, search: DefinedSearch) -> dict:

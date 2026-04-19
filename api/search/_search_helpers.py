@@ -13,6 +13,7 @@ def get_v2_profile(storage: SupabaseStorage, profile_id: str) -> V2Profile | Non
     return V2Profile(
         id=p.id,
         dataset_id="",
+        person_id=getattr(p, "person_id", "") or "",
         identity=ProfileIdentity(
             name=p.display_name(),
             email=p.email or None,
@@ -64,6 +65,7 @@ def get_v2_profiles(storage: SupabaseStorage, dataset_id: str = None) -> list[V2
             profiles.append(V2Profile(
                 id=p.id,
                 dataset_id=ds.id,
+                person_id=getattr(p, "person_id", "") or "",
                 identity=ProfileIdentity(
                     name=p.display_name(),
                     email=p.email or None,

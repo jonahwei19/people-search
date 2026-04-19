@@ -28,6 +28,8 @@ class ProfileIdentity(BaseModel):
 class Profile(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     dataset_id: str = ""
+    # Canonical id shared across datasets by the same person (Phase 1 merge).
+    person_id: str = ""
     identity: ProfileIdentity = Field(default_factory=ProfileIdentity)
     fields: dict[str, ProfileField] = Field(default_factory=dict)
     raw_text: str = ""

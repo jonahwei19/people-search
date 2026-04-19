@@ -80,6 +80,12 @@ class Profile:
     #   "v1", "v2", … — produced by pipeline.run_enrichment() with matching ENRICHMENT_VERSION
     source_dataset: str = ""
     source_row: int = -1
+    # Canonical identifier shared by rows representing the same person across
+    # datasets. Populated on upload by matching email / linkedin_url / (name,
+    # org) against existing profiles in the account. The search/display layer
+    # dedupes by person_id so each person appears once per query, even if
+    # uploaded in multiple CSVs.
+    person_id: str = ""
 
     def searchable_text_fields(self) -> dict[str, str]:
         """All text fields available for search.

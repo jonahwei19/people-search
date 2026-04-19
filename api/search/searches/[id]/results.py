@@ -24,22 +24,37 @@ class handler(BaseHTTPRequestHandler):
         profile_map = {p.id: p for p in profiles}
         excluded = set(search.excluded_profile_ids)
 
+        # Phase 1 profile merge: dedupe by person_id across datasets.
+        # For each canonical person, keep the highest-scoring row and note
+        # how many source-dataset rows exist for them.
         results = []
         excluded_count = 0
+        person_seen: dict[str, int] = {}  # person_id -> index in results
         for pid, score in sorted(search.cache.scores.items(), key=lambda x: -x[1].score):
             if pid in excluded:
                 excluded_count += 1
                 continue
             p = profile_map.get(pid)
-            results.append({
+            person_id = getattr(p, "person_id", "") if p else ""
+            if person_id and person_id in person_seen:
+                # Already have a higher-scored row for this person. Count it
+                # for the "appears in N datasets" badge.
+                results[person_seen[person_id]]["dataset_rows"] += 1
+                continue
+            row = {
                 "id": pid,
+                "person_id": person_id,
+                "dataset_rows": 1,
                 "name": p.identity.name if p else "Unknown",
                 "score": score.score,
                 "reasoning": score.reasoning,
                 "raw_text_preview": (p.raw_text[:400] if p else ""),
                 "linkedin_url": (p.identity.linkedin_url if p else ""),
                 "email": (p.identity.email if p else ""),
-            })
+            }
+            if person_id:
+                person_seen[person_id] = len(results)
+            results.append(row)
 
         json_response(self, 200, {
             "results": results,
