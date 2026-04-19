@@ -401,6 +401,12 @@ class SupabaseStorage:
             row["enriched_organization"] = profile.enriched_organization
         if profile.enriched_title:
             row["enriched_title"] = profile.enriched_title
+        # verification_decisions: JSONB column added by migration
+        # cloud/migrations/004_verification_decisions.sql (plans/diagnosis_correctness.md P5).
+        # Conditional write — pre-migration environments reject unknown columns.
+        decisions = getattr(profile, "verification_decisions", None)
+        if decisions:
+            row["verification_decisions"] = decisions
         if dataset_id is not None:
             row["dataset_id"] = dataset_id
         return row
@@ -444,6 +450,9 @@ class SupabaseStorage:
                 row.get("enrichment_status", "pending")
             ),
             enrichment_log=pj(row.get("enrichment_log"), []),
+            # verification_decisions defaults to [] when the column is absent
+            # (pre-migration) or NULL.
+            verification_decisions=pj(row.get("verification_decisions"), []),
             enrichment_version=row.get("enrichment_version") or "",
             enriched_organization=row.get("enriched_organization") or "",
             enriched_title=row.get("enriched_title") or "",

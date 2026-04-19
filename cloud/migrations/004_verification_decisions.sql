@@ -1,0 +1,34 @@
+-- Add verification_decisions JSONB column to profiles.
+-- Run in Supabase SQL editor:
+--   https://supabase.com/dashboard/project/bbvwebtkypytvrhaeqey/sql/new
+--
+-- Context: plans/diagnosis_correctness.md P5 — structured observability.
+--
+-- Before this migration, `_verify_match` produced only free-form log strings
+-- (`enrichment_log`). Slicing the eval harness by failure reason required
+-- regexing those strings, which was fragile and slow. The verifier now emits
+-- a structured dict for every candidate pass:
+--
+--   {
+--     "linkedin_url": str,
+--     "enriched_name": str,
+--     "score": int,
+--     "anchors_positive": ["name_strong", "org_match", "slug_match", ...],
+--     "anchors_negative": ["org_mismatch", "content_mismatch", ...],
+--     "decision": "accept" | "reject" | "ambiguous",
+--     "reason": str,     -- human-readable one-liner
+--     "timestamp": str   -- ISO-8601 UTC
+--   }
+--
+-- Multiple entries per profile are expected (one per LinkedIn URL tried,
+-- plus any arbiter calls). The eval harness (`enrichment/eval/coverage_report.py`)
+-- aggregates reason-counts across a dataset.
+--
+-- Backwards-compatible: writes that predate this migration continue to work
+-- (supabase.py guards the column with `if profile.verification_decisions:`),
+-- and reads default to `[]` when the column is NULL.
+--
+-- Idempotent — safe to re-run.
+
+ALTER TABLE profiles
+  ADD COLUMN IF NOT EXISTS verification_decisions JSONB DEFAULT '[]'::jsonb;

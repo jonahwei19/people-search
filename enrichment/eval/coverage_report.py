@@ -136,6 +136,34 @@ _LI_ENRICH_RE = re.compile(r"Trying LinkedIn:")
 _SEARCH_RE = re.compile(r"Search \(")
 
 
+# Map the leading word/phrase of a verification-decision reason to a stable
+# bucket. The raw `reason` strings include variable parameters like
+# "score_below_threshold (score=1, checks=2)" — we want to aggregate across
+# the parameter variants.
+_REASON_CATEGORIES: list[tuple[str, str]] = [
+    ("score_below_threshold", "score_below_threshold"),
+    ("weak_name_no_corroboration", "weak_name_no_corroboration"),
+    ("soft_penalty_no_positive", "soft_penalty_no_positive"),
+    ("weak name match rejected (short-token-only)", "weak_match_short_token"),
+    ("weak name match rejected (last-name-missing)", "weak_match_last_name_missing"),
+    ("name mismatch", "name_mismatch"),
+    ("accepted", "accepted"),
+    ("arbiter selected", "arbiter_selected"),
+    ("arbiter abstained", "arbiter_abstained"),
+    ("arbiter rejected", "arbiter_rejected"),
+]
+
+
+def _normalize_decision_reason(reason: str) -> str:
+    """Collapse a variable reason string into a stable category bucket."""
+    if not reason:
+        return "unspecified"
+    for needle, bucket in _REASON_CATEGORIES:
+        if reason.startswith(needle):
+            return bucket
+    return "other"
+
+
 def _count_log_events(log: Iterable[str]) -> Counter:
     """Count the log-pattern buckets for a single profile's log."""
     out: Counter = Counter()
@@ -190,6 +218,15 @@ def run_report(profiles: list[Profile]) -> dict[str, Any]:
     per_profile_searches: list[int] = []
     per_profile_linkedin_calls: list[int] = []
 
+    # Structured verification_decisions aggregation (P5).
+    # Each profile may have 0+ decision records; we break down by `decision`
+    # and by a normalized `reason_category` derived from the `reason` string
+    # prefix. See `_normalize_decision_reason` for the category set.
+    decision_counts: Counter = Counter()
+    decision_reason_counts: Counter = Counter()
+    anchor_positive_counts: Counter = Counter()
+    anchor_negative_counts: Counter = Counter()
+
     enriched_count = 0
 
     for p in profiles:
@@ -220,6 +257,19 @@ def run_report(profiles: list[Profile]) -> dict[str, Any]:
         per_profile_cost.append(cost)
         per_profile_searches.append(searches)
         per_profile_linkedin_calls.append(li)
+
+        # Structured verification_decisions — P5 observability slice.
+        for entry in getattr(p, "verification_decisions", None) or []:
+            if not isinstance(entry, dict):
+                continue
+            decision = str(entry.get("decision") or "unknown")
+            decision_counts[decision] += 1
+            category = _normalize_decision_reason(str(entry.get("reason") or ""))
+            decision_reason_counts[f"{decision}:{category}"] += 1
+            for anchor in entry.get("anchors_positive") or []:
+                anchor_positive_counts[str(anchor)] += 1
+            for anchor in entry.get("anchors_negative") or []:
+                anchor_negative_counts[str(anchor)] += 1
 
     def _pct(n: int, d: int) -> float:
         return round(100.0 * n / d, 1) if d else 0.0
@@ -275,6 +325,13 @@ def run_report(profiles: list[Profile]) -> dict[str, Any]:
             idx = max(0, int(round(0.95 * (len(sorted_costs) - 1))))
             cost_block["p95_per_profile_usd"] = round(sorted_costs[idx], 4)
 
+    verification_decisions_block = {
+        "decision_counts": dict(decision_counts),
+        "reason_counts": dict(decision_reason_counts),
+        "anchors_positive_counts": dict(anchor_positive_counts),
+        "anchors_negative_counts": dict(anchor_negative_counts),
+    }
+
     return {
         "coverage": coverage,
         "cohorts": cohorts,
@@ -282,6 +339,7 @@ def run_report(profiles: list[Profile]) -> dict[str, Any]:
         "enrichment_versions": dict(version_counts),
         "cost": cost_block,
         "log_events": dict(log_event_totals),
+        "verification_decisions": verification_decisions_block,
         "_integrity": {
             "status_counts_sum": sum(status_counts.values()),
             "matches_total": sum(status_counts.values()) == total,
@@ -396,6 +454,29 @@ def format_report(report: dict[str, Any], *, label: str = "") -> str:
     lines.append("\nLog-pattern counts (across all profiles):")
     rows = sorted(((k, v) for k, v in le.items()), key=lambda kv: -kv[1])
     lines.extend("  " + ln for ln in _fmt_table(rows, ("pattern", "count")))
+
+    # ─ verification decisions (P5)
+    vd = report.get("verification_decisions") or {}
+    if vd and any(vd.values()):
+        lines.append("\nVerification decisions (structured, per-candidate):")
+        rows = sorted(((k, v) for k, v in (vd.get("decision_counts") or {}).items()), key=lambda kv: -kv[1])
+        if rows:
+            lines.extend("  " + ln for ln in _fmt_table(rows, ("decision", "count")))
+        reason_counts = vd.get("reason_counts") or {}
+        if reason_counts:
+            lines.append("\n  by reason category (decision:reason):")
+            rows = sorted(((k, v) for k, v in reason_counts.items()), key=lambda kv: -kv[1])
+            lines.extend("    " + ln for ln in _fmt_table(rows, ("bucket", "count")))
+        pos_anchors = vd.get("anchors_positive_counts") or {}
+        if pos_anchors:
+            lines.append("\n  positive anchors (count of decisions in which each fired):")
+            rows = sorted(((k, v) for k, v in pos_anchors.items()), key=lambda kv: -kv[1])
+            lines.extend("    " + ln for ln in _fmt_table(rows, ("anchor", "count")))
+        neg_anchors = vd.get("anchors_negative_counts") or {}
+        if neg_anchors:
+            lines.append("\n  negative anchors (count of decisions in which each fired):")
+            rows = sorted(((k, v) for k, v in neg_anchors.items()), key=lambda kv: -kv[1])
+            lines.extend("    " + ln for ln in _fmt_table(rows, ("anchor", "count")))
 
     lines.append("")
     return "\n".join(lines)

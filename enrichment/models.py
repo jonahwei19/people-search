@@ -66,6 +66,14 @@ class Profile:
     # Pipeline state
     enrichment_status: EnrichmentStatus = EnrichmentStatus.PENDING
     enrichment_log: list[str] = field(default_factory=list)  # per-profile log of what happened
+    # Structured verification decisions. Each entry is a dict emitted by
+    # `_verify_match`:
+    #   {linkedin_url, enriched_name, score, anchors_positive, anchors_negative,
+    #    decision ("accept"|"reject"|"ambiguous"), reason, timestamp}
+    # Populated alongside enrichment_log so the eval harness can slice failures
+    # by reason category without re-parsing the free-form log strings. See
+    # plans/diagnosis_correctness.md P5 and enrichment/eval/coverage_report.py.
+    verification_decisions: list[dict] = field(default_factory=list)
     enrichment_version: str = ""  # pipeline generation that produced this record.
     #   "" — pending / never run through any pipeline
     #   "v0-legacy" — produced before the version stamp existed (back-filled by migration 002)

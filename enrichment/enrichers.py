@@ -105,8 +105,14 @@ class LinkedInEnricher:
             total_cost += self._cost_per_call
             parsed = self._parse_response(data)
 
-            # Verify the enriched profile matches the person
-            verified, verify_log = self._verify_match(profile, parsed)
+            # Verify the enriched profile matches the person.
+            # `url` is passed so `_verify_match` can check the URL's slug as
+            # an additional corroborating signal (P4): when the profile has a
+            # confident name match AND the slug contains both first+last, we
+            # bump the score; when the slug's last-name component matches the
+            # ENRICHED name's last (rather than the profile's), we note it as
+            # a weak counter-signal.
+            verified, verify_log = self._verify_match(profile, parsed, url)
             profile.enrichment_log.extend(verify_log)
 
             if verified:
@@ -145,7 +151,12 @@ class LinkedInEnricher:
             cost=total_cost,
         )
 
-    def _verify_match(self, profile: Profile, enriched: dict) -> tuple[bool, list[str]]:
+    def _verify_match(
+        self,
+        profile: Profile,
+        enriched: dict,
+        linkedin_url: str = "",
+    ) -> tuple[bool, list[str]]:
         """Cross-check enriched LinkedIn data against what we know about the person.
 
         Compares name, company, and location. Returns (is_match, log_lines).
@@ -166,6 +177,20 @@ class LinkedInEnricher:
           positive non-name signal). This closes the "name match + org
           mismatch, no other evidence" false-positive path that let
           same-name-different-person slip through at score=2, checks=1.
+
+        P4 (slug-aware verification):
+        - `linkedin_url` is parsed to extract the URL slug (the path segment
+          after /in/). The slug is tokenised and substring-checked against
+          the profile's first/last name.
+        - If BOTH first+last are present in the slug, award +2 as a positive
+          non-name signal (the URL itself corroborates the name-match).
+        - If only the first name is in the slug: 0 (neutral).
+        - If neither is in the slug: 0.
+        - If the slug's last-name component matches the ENRICHED person's
+          last name (not the profile's), log it as a soft counter-signal
+          but do NOT subtract — the slug is the enriched profile's slug,
+          so of course it contains the enriched name; we just flag that the
+          slug does NOT corroborate the profile.
         """
         log = []
         score = 0
@@ -173,6 +198,11 @@ class LinkedInEnricher:
         positive_non_name = 0
         soft_penalties = 0
         name_strength = "none"  # "none" / "weak" / "normal" / "strong"
+        # Track verification anchors for structured observability (P5). Populated
+        # alongside the human-readable log lines so the eval harness can slice
+        # failures by reason category without re-parsing strings.
+        anchors_positive: list[str] = []
+        anchors_negative: list[str] = []
 
         # Name check (required)
         import unicodedata
@@ -224,10 +254,22 @@ class LinkedInEnricher:
                     and profile_last not in enriched_name
                 )
                 if single_short_match or last_name_missing:
+                    reason_code = "short-token-only" if single_short_match else "last-name-missing"
                     log.append(
                         f"  Verify name: WEAK-MATCH REJECTED "
                         f"(overlap={overlap}, profile='{profile_name}', enriched='{enriched_name}', "
-                        f"reason={'short-token-only' if single_short_match else 'last-name-missing'})"
+                        f"reason={reason_code})"
+                    )
+                    anchors_negative.append(f"weak_match_{reason_code.replace('-', '_')}")
+                    self._record_verification_decision(
+                        profile,
+                        linkedin_url=linkedin_url,
+                        enriched_name=enriched_name,
+                        score=score,
+                        anchors_positive=anchors_positive,
+                        anchors_negative=anchors_negative,
+                        decision="reject",
+                        reason=f"weak name match rejected ({reason_code})",
                     )
                     return False, log
 
@@ -249,24 +291,101 @@ class LinkedInEnricher:
                 if both_present and len(profile_first) >= 5 and len(profile_last) >= 5:
                     score += 3
                     name_strength = "strong"
+                    anchors_positive.append("name_strong")
                 elif both_present:
                     score += 2
                     name_strength = "normal"
+                    anchors_positive.append("name_normal")
                 elif len(overlap) >= 2 and overlap_lens[0] >= 4:
                     # Two tokens overlap but profile didn't cleanly give us
                     # first+last (e.g., hyphenated or multi-token names).
                     score += 2
                     name_strength = "normal"
+                    anchors_positive.append("name_normal")
                 else:
                     # Single-token overlap. Profile may be a one-word name
                     # ("Beez Africa") or a first-name collision. Weak — needs
                     # another positive signal before we'll accept.
                     score += 1
                     name_strength = "weak"
+                    anchors_positive.append("name_weak")
                 log.append(f"  Verify name: MATCH ({overlap}, strength={name_strength})")
             else:
                 log.append(f"  Verify name: MISMATCH ('{profile_name}' vs '{enriched_name}')")
+                anchors_negative.append("name_mismatch")
+                self._record_verification_decision(
+                    profile,
+                    linkedin_url=linkedin_url,
+                    enriched_name=enriched_name,
+                    score=score,
+                    anchors_positive=anchors_positive,
+                    anchors_negative=anchors_negative,
+                    decision="reject",
+                    reason=f"name mismatch ('{profile_name}' vs '{enriched_name}')",
+                )
                 return False, log  # Name mismatch is a hard reject
+
+        # P4: Slug-aware corroboration.
+        # Parse the LinkedIn URL's path slug (e.g., linkedin.com/in/dan-fragiadakis-phd
+        # → "dan-fragiadakis-phd"), then check whether the profile's first and
+        # last name appear as substrings inside it. A slug that contains BOTH
+        # is a URL-level corroboration of the name match (LinkedIn constructs
+        # /in/ slugs from the profile owner's name at signup, so "dylan-matthews"
+        # in the slug is strong evidence the account belongs to Dylan Matthews).
+        # Worth +2 as a positive non-name signal (the URL is an *independent*
+        # anchor from the display-name match).
+        #
+        # Neutral cases (no score change): first name only in slug, neither in
+        # slug. LinkedIn sometimes auto-generates numeric/abbreviated slugs
+        # (/in/abc-12345), so "slug doesn't contain profile name" is not by
+        # itself evidence against the match — just an absence of corroboration.
+        #
+        # Counter-signal (logged, no score change): if the slug's last-name
+        # component matches the ENRICHED last name but NOT the profile's last
+        # name. Example: profile="Abi Olvera", enriched="Abi Hashem", slug=
+        # "abi-hashem" — same first name, slug corroborates the *enriched*
+        # person, not the profile. We don't subtract (the name check already
+        # handles last-name-missing as a hard reject upstream), but we note it
+        # so the arbiter / eval harness can see the pattern.
+        if linkedin_url:
+            slug = linkedin_url.rstrip("/").split("/")[-1].lower()
+            slug_clean = slug.replace("-", "").replace("_", "").replace(".", "")
+            if slug_clean:
+                pf = profile_first if profile_first else ""
+                pl = profile_last if profile_last else ""
+                first_in_slug = bool(pf) and len(pf) >= 3 and pf in slug_clean
+                last_in_slug = bool(pl) and len(pl) >= 3 and pl in slug_clean
+
+                if first_in_slug and last_in_slug:
+                    score += 2
+                    positive_non_name += 1
+                    anchors_positive.append("slug_match")
+                    log.append(f"  Verify slug: MATCH ('{slug}' contains both '{pf}' and '{pl}')")
+                elif first_in_slug and not last_in_slug:
+                    # First-only is neutral — legitimate abbreviated or
+                    # privacy-hidden-last-name cases land here.
+                    log.append(f"  Verify slug: PARTIAL ('{slug}' contains '{pf}' but not '{pl}')")
+                else:
+                    # Neither name in slug — could be a numeric slug, or the
+                    # slug belongs to a different person entirely. Check whether
+                    # the slug corroborates the *enriched* last name instead —
+                    # that's a weak counter-signal we want visibility on.
+                    enriched_last = ""
+                    if enriched_name:
+                        e_parts = enriched_name.replace("-", " ").split()
+                        if len(e_parts) >= 2:
+                            enriched_last = e_parts[-1]
+                    if enriched_last and len(enriched_last) >= 3 and enriched_last in slug_clean and enriched_last != pl:
+                        # Note, don't subtract. The slug being "hashem" when
+                        # the profile is "Abi Olvera" is informative: the slug
+                        # belongs to the enriched (possibly wrong) person.
+                        anchors_negative.append("slug_matches_enriched_not_profile")
+                        log.append(
+                            f"  Verify slug: COUNTER-SIGNAL "
+                            f"('{slug}' corroborates enriched last '{enriched_last}', not profile last '{pl}')"
+                        )
+                    else:
+                        log.append(f"  Verify slug: NONE ('{slug}' contains neither '{pf}' nor '{pl}')")
 
         # Company/org check
         profile_org = (profile.organization or "").lower()
@@ -306,11 +425,13 @@ class LinkedInEnricher:
             if matched:
                 score += 3
                 positive_non_name += 1
+                anchors_positive.append("org_match")
                 log.append(f"  Verify org: MATCH ('{org_to_match}' found in experience)")
             else:
                 # Soft penalty — people change jobs, orgs get renamed
                 score -= 1
                 soft_penalties += 1
+                anchors_negative.append("org_mismatch")
                 log.append(f"  Verify org: MISMATCH ('{org_to_match}' not in {[c for c in all_companies if c][:3]})")
         elif org_is_vague:
             log.append(f"  Verify org: SKIPPED (vague org: '{profile_org}')")
@@ -342,11 +463,13 @@ class LinkedInEnricher:
             if loc_match:
                 score += 2
                 positive_non_name += 1
+                anchors_positive.append("location_match")
                 log.append(f"  Verify location: MATCH ('{enriched_location}')")
             else:
                 # Soft penalty — people relocate
                 score -= 1
                 soft_penalties += 1
+                anchors_negative.append("location_mismatch")
                 log.append(f"  Verify location: MISMATCH ('{profile_city or profile_country}' vs '{enriched_location}')")
 
         # Thin profile note: many early-career people have sparse LinkedIn.
@@ -377,10 +500,12 @@ class LinkedInEnricher:
                 if len(content_overlap) >= 3:
                     score += 2
                     positive_non_name += 1
+                    anchors_positive.append("content_match")
                     log.append(f"  Verify content relevance: MATCH ({len(content_overlap)} shared terms: {list(content_overlap)[:5]})")
                 elif len(content_overlap) == 0 and len(content_words) > 10:
                     score -= 1
                     soft_penalties += 1
+                    anchors_negative.append("content_mismatch")
                     log.append(f"  Verify content relevance: WEAK (zero overlap between content and LinkedIn)")
 
         # Decision rules (FM2 / P2):
@@ -393,12 +518,32 @@ class LinkedInEnricher:
         #    accepted without a corroborating positive non-name signal.
         if score < 2:
             log.append(f"  Verify result: REJECTED (score={score}, checks={checks} — likely wrong person)")
+            self._record_verification_decision(
+                profile,
+                linkedin_url=linkedin_url,
+                enriched_name=enriched_name,
+                score=score,
+                anchors_positive=anchors_positive,
+                anchors_negative=anchors_negative,
+                decision="reject",
+                reason=f"score_below_threshold (score={score}, checks={checks})",
+            )
             return False, log
 
         if name_strength == "weak" and positive_non_name == 0:
             log.append(
                 f"  Verify result: REJECTED (weak name match with no corroborating signal; "
                 f"score={score}, checks={checks}, penalties={soft_penalties})"
+            )
+            self._record_verification_decision(
+                profile,
+                linkedin_url=linkedin_url,
+                enriched_name=enriched_name,
+                score=score,
+                anchors_positive=anchors_positive,
+                anchors_negative=anchors_negative,
+                decision="reject",
+                reason=f"weak_name_no_corroboration (score={score}, penalties={soft_penalties})",
             )
             return False, log
 
@@ -407,13 +552,81 @@ class LinkedInEnricher:
                 f"  Verify result: REJECTED (soft penalty without corroborating positive; "
                 f"score={score}, checks={checks}, penalties={soft_penalties})"
             )
+            self._record_verification_decision(
+                profile,
+                linkedin_url=linkedin_url,
+                enriched_name=enriched_name,
+                score=score,
+                anchors_positive=anchors_positive,
+                anchors_negative=anchors_negative,
+                decision="reject",
+                reason=f"soft_penalty_no_positive (score={score}, penalties={soft_penalties})",
+            )
             return False, log
 
         log.append(
             f"  Verify result: ACCEPTED (score={score}, checks={checks}, "
             f"name={name_strength}, positives={positive_non_name}, penalties={soft_penalties})"
         )
+        self._record_verification_decision(
+            profile,
+            linkedin_url=linkedin_url,
+            enriched_name=enriched_name,
+            score=score,
+            anchors_positive=anchors_positive,
+            anchors_negative=anchors_negative,
+            decision="accept",
+            reason=(
+                f"accepted (name={name_strength}, positives={positive_non_name}, "
+                f"penalties={soft_penalties})"
+            ),
+        )
         return True, log
+
+    @staticmethod
+    def _record_verification_decision(
+        profile: Profile,
+        *,
+        linkedin_url: str,
+        enriched_name: str,
+        score: int,
+        anchors_positive: list[str],
+        anchors_negative: list[str],
+        decision: str,
+        reason: str,
+    ) -> None:
+        """Append a structured observability record for one verification pass.
+
+        Each entry captures the attempted match, the anchors that fired, and
+        the final decision — so the eval harness can slice failures by
+        reason without re-parsing the free-form enrichment_log.
+
+        Defensive: profiles loaded from older DB rows may not have the
+        `verification_decisions` attribute yet. Treat a missing attribute
+        as an empty list and initialise it in place.
+        """
+        from datetime import datetime, timezone
+
+        decisions = getattr(profile, "verification_decisions", None)
+        if decisions is None:
+            decisions = []
+            try:
+                profile.verification_decisions = decisions
+            except Exception:
+                # Profile may be a frozen/slotted variant — bail out silently.
+                return
+        decisions.append(
+            {
+                "linkedin_url": linkedin_url or "",
+                "enriched_name": enriched_name or "",
+                "score": int(score),
+                "anchors_positive": list(anchors_positive),
+                "anchors_negative": list(anchors_negative),
+                "decision": decision,
+                "reason": reason,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+        )
 
     def enrich_batch(
         self,
