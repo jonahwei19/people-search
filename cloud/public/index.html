@@ -1769,6 +1769,7 @@ function pollSearchProgress(id) {
 }
 
 async function searchShowResults(id, sd) {
+  loadSearchDatasets();  // ensure dataset selector is populated
   const resultsData = await (await apiFetch(`/api/search/searches/${id}/results`)).json();
   const results = resultsData.results;
   const excludedCount = resultsData.excluded_count || 0;
@@ -1923,6 +1924,7 @@ function exportSearchCSV() {
 }
 
 async function searchRerun() {
+  var dsFilter = document.getElementById('search-dataset-results')?.value || '';
   document.getElementById('btn-rerun').textContent = 'Synthesizing...';
   const {proposal} = await (await apiFetch(`/api/search/searches/${sId}/synthesize`, {method:'POST'})).json();
   document.getElementById('btn-rerun').textContent = 'Re-run with feedback';
@@ -1959,7 +1961,8 @@ function searchRejectProposal() { document.getElementById('search-proposal').sty
 
 async function doSearchRerun() {
   sShow('progress'); document.getElementById('search-progress-fill').style.width = '0%';
-  await apiFetch(`/api/search/searches/${sId}/rerun`, {method:'POST'});
+  var dsFilter = document.getElementById('search-dataset-results')?.value || '';
+  await apiFetch(`/api/search/searches/${sId}/rerun`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({dataset_id: dsFilter || undefined})});
   pollSearchProgress(sId);
 }
 
@@ -2020,6 +2023,7 @@ function searchImportFile(input) {
 
 const _origShowPage = showPage;
 showPage = function(name) { _origShowPage(name); if (name === 'search') { sShow('picker'); loadSearchList(); loadSearchDatasets(); loadGlobalRules(); } if (name === 'settings') { loadOutreach(); } };
+
 
 // ── Email Outreach ──
 var outreachDefaults = {

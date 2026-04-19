@@ -2,7 +2,7 @@
 
 from http.server import BaseHTTPRequestHandler
 
-from api._helpers import require_auth, json_response, path_param, get_storage
+from api._helpers import require_auth, json_response, path_param, read_json_body, get_storage
 from api.search._search_helpers import get_v2_profiles
 from search.llm_judge import score_profiles_sync
 from search.global_filter import filter_global_rules
@@ -16,6 +16,8 @@ class handler(BaseHTTPRequestHandler):
             return
 
         search_id = path_param(self, -2)
+        body = read_json_body(self) or {}
+        dataset_id = body.get("dataset_id")
         storage = get_storage(account["account_id"])
         search = storage.load_search(search_id)
 
@@ -23,7 +25,7 @@ class handler(BaseHTTPRequestHandler):
             json_response(self, 404, {"error": "not found"})
             return
 
-        profiles = get_v2_profiles(storage)
+        profiles = get_v2_profiles(storage, dataset_id=dataset_id)
         global_rules = storage.load_rules()
 
         # Auto-synthesize rules from feedback before re-scoring
