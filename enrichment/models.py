@@ -59,6 +59,7 @@ class Profile:
     # Pipeline state
     enrichment_status: EnrichmentStatus = EnrichmentStatus.PENDING
     enrichment_log: list[str] = field(default_factory=list)  # per-profile log of what happened
+    enrichment_version: str = ""  # e.g., "v1" — pipeline generation that produced this record
     source_dataset: str = ""
     source_row: int = -1
 

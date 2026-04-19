@@ -387,6 +387,11 @@ class SupabaseStorage:
             "enrichment_status": profile.enrichment_status.value,
             "enrichment_log": profile.enrichment_log,
         }
+        # Only include enrichment_version if the column exists on the DB.
+        # (Backwards-compat: the migration adds this column; writes before it
+        # runs would otherwise fail.)
+        if profile.enrichment_version:
+            row["enrichment_version"] = profile.enrichment_version
         if dataset_id is not None:
             row["dataset_id"] = dataset_id
         return row
@@ -430,6 +435,7 @@ class SupabaseStorage:
                 row.get("enrichment_status", "pending")
             ),
             enrichment_log=pj(row.get("enrichment_log"), []),
+            enrichment_version=row.get("enrichment_version") or "",
         )
 
     def _search_to_row(self, search: DefinedSearch) -> dict:

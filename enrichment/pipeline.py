@@ -38,6 +38,12 @@ from typing import Callable
 
 from .models import Dataset, Profile, EnrichmentStatus
 from .schema import SchemaDetector, FieldMapping, FieldType
+
+# Bump when the enrichment pipeline changes in ways that affect output quality
+# (different search strategy, different scoring, different identity heuristics).
+# v1 — initial cloud pipeline: Brave/Serper search + EnrichLayer + non-LinkedIn
+#      evidence salvage. Established 2026-04-19.
+ENRICHMENT_VERSION = "v1"
 from .costs import CostEstimator, CostBreakdown
 from .enrichers import LinkedInEnricher, is_valid_linkedin_url
 from .identity import IdentityResolver
@@ -208,6 +214,11 @@ class EnrichmentPipeline:
             on_batch_save=on_batch_save,
         )
 
+        # Stamp pipeline version onto every profile that was touched this run
+        for p in dataset.profiles:
+            if p.enrichment_status in (EnrichmentStatus.ENRICHED, EnrichmentStatus.SKIPPED, EnrichmentStatus.FAILED):
+                p.enrichment_version = ENRICHMENT_VERSION
+
         # Combine stats
         stats = {
             "resolved": resolve_stats.get("resolved", 0),
@@ -216,6 +227,7 @@ class EnrichmentPipeline:
             "skipped": enrich_stats.get("skipped", 0),
             "failed": enrich_stats.get("failed", 0),
             "total_cost": enrich_stats.get("total_cost", 0),
+            "enrichment_version": ENRICHMENT_VERSION,
         }
         dataset.enrichment_stats.update(stats)
         return stats

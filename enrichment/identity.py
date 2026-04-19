@@ -44,12 +44,18 @@ class ResolveResult:
     alternatives: list[str] = None
     log: list[str] = None  # per-profile log of what happened
     error: str = ""
+    # Non-LinkedIn evidence gathered during search (personal sites, GitHub,
+    # Substack, academic pages, etc.). Preserved even when LinkedIn lookup fails
+    # so the profile can still be scored against them.
+    evidence_urls: list[dict] = None  # [{"url", "title", "description", "source"}]
 
     def __post_init__(self):
         if self.alternatives is None:
             self.alternatives = []
         if self.log is None:
             self.log = []
+        if self.evidence_urls is None:
+            self.evidence_urls = []
 
 
 def _extract_context(profile: Profile) -> dict:
@@ -179,6 +185,58 @@ DATA_BROKER_DOMAINS = {
     "apollo.io", "hunter.io", "snov.io", "skrapp.io", "uplead.com",
     "zoominfo.com", "leadiq.com", "seamless.ai", "nymeria.io",
 }
+
+
+def _save_evidence_urls(profile: Profile, evidence: list[dict]) -> None:
+    """Persist non-LinkedIn evidence URLs onto the profile.
+
+    Categorizes by URL shape:
+    - GitHub → other_links (if not already present)
+    - Twitter/X → twitter_url (only if empty)
+    - Personal sites → website_url (only if empty), plus other_links
+    - Substack, academic, etc. → other_links
+
+    Also stores the URL + search snippet (title + description) in
+    fetched_content so the scoring judge has text to work with.
+    """
+    if not evidence:
+        return
+
+    existing_links = set(l.lower().rstrip("/") for l in (profile.other_links or []))
+    # Cap at 10 evidence URLs to avoid ballooning the profile
+    for e in evidence[:10]:
+        url = e.get("url", "").strip()
+        if not url:
+            continue
+        ul = url.lower()
+        key = ul.rstrip("/")
+
+        if "github.com" in ul:
+            if key not in existing_links:
+                profile.other_links.append(url)
+                existing_links.add(key)
+        elif "twitter.com" in ul or ul.startswith("https://x.com/") or "://x.com/" in ul:
+            if not profile.twitter_url:
+                profile.twitter_url = url
+            elif key not in existing_links:
+                profile.other_links.append(url)
+                existing_links.add(key)
+        elif "substack.com" in ul or ".edu/" in ul or "medium.com" in ul or "scholar.google" in ul:
+            if key not in existing_links:
+                profile.other_links.append(url)
+                existing_links.add(key)
+        else:
+            if not profile.website_url:
+                profile.website_url = url
+            elif key not in existing_links:
+                profile.other_links.append(url)
+                existing_links.add(key)
+
+        # Store the snippet as fetched_content so the scoring judge sees it
+        snippet = f"{e.get('title','')}\n{e.get('description','')}".strip()
+        if snippet:
+            slot = f"search_evidence:{url[:80]}"
+            profile.fetched_content[slot] = snippet
 
 
 def _follow_email_evidence(results: list[dict], name: str, log: list[str]) -> list[dict]:
@@ -326,6 +384,34 @@ class IdentityResolver:
         queries_run = set()
         _search_count = [0]
 
+        # Accumulate non-LinkedIn URLs we encounter. Even when LinkedIn lookup
+        # fails, these are valuable signals (personal sites, GitHub, Substack,
+        # academic pages) that the scoring judge can use.
+        evidence_urls: list[dict] = []
+        evidence_seen: set = set()
+
+        def _record_evidence(results: list[dict], source: str) -> None:
+            for r in results or []:
+                url = (r.get("url") or "").strip()
+                if not url or "linkedin.com" in url.lower():
+                    continue
+                # Skip obvious data brokers / spam
+                ul = url.lower()
+                if any(d in ul for d in ("spokeo.com", "beenverified", "whitepages", "radaris",
+                                           "truepeoplesearch", "peekyou", "rocketreach", "clearbit",
+                                           "zoominfo", "apollo.io")):
+                    continue
+                key = ul.rstrip("/")
+                if key in evidence_seen:
+                    continue
+                evidence_seen.add(key)
+                evidence_urls.append({
+                    "url": url,
+                    "title": r.get("title", "")[:200],
+                    "description": (r.get("description") or "")[:400],
+                    "source": source,
+                })
+
         def search(query: str, label: str):
             if query in queries_run:
                 return []
@@ -334,6 +420,8 @@ class IdentityResolver:
             log.append(f"  Search ({label}): {query}")
             results = _web_search(query, self.brave_key, self.serper_key)
             li_results = [r for r in results if _is_linkedin_profile_url(r["url"])]
+            # Capture non-LinkedIn URLs as fallback evidence
+            _record_evidence([r for r in results if not _is_linkedin_profile_url(r["url"])], label)
             log.append(f"    → {len(results)} results, {len(li_results)} LinkedIn profiles")
             return li_results
 
@@ -501,13 +589,17 @@ class IdentityResolver:
                 unique.append(c)
 
         if not unique:
-            log.append("  No LinkedIn profiles found across all searches")
-            return ResolveResult(error="No LinkedIn profile found", log=log)
+            log.append(f"  No LinkedIn profiles found across all searches ({len(evidence_urls)} non-LinkedIn evidence URLs retained)")
+            return ResolveResult(error="No LinkedIn profile found", log=log, evidence_urls=evidence_urls)
 
         log.append(f"  {len(unique)} unique LinkedIn candidates found")
 
         # ── Score candidates ──
         result = self._score_candidates(unique, ctx, email_verified_company, log)
+        # Attach evidence to successful results too — useful signal when LinkedIn
+        # scoring rejects all candidates.
+        if not result.evidence_urls:
+            result.evidence_urls = evidence_urls
         return result
 
     def _score_candidates(self, candidates: list[dict], ctx: dict,
@@ -737,5 +829,13 @@ class IdentityResolver:
                 else:
                     profile.enrichment_log.append(f"→ Not found: {result.error}")
                     stats["failed"] += 1
+
+                # Save non-LinkedIn evidence URLs regardless of LinkedIn outcome.
+                # These are personal sites, GitHub, Substack, academic pages, etc.
+                if result.evidence_urls:
+                    _save_evidence_urls(profile, result.evidence_urls)
+                    profile.enrichment_log.append(
+                        f"→ Saved {len(result.evidence_urls)} non-LinkedIn evidence URLs"
+                    )
 
         return stats
