@@ -1,0 +1,57 @@
+========================================================================
+COVERAGE REPORT — cloud:TLS Applicants (14d49498)
+========================================================================
+
+Total profiles: 399
+
+Status distribution:
+  status    count  pct  
+  --------  -----  -----
+  enriched  290    72.7%
+  pending   109    27.3%
+
+Cohort breakdown (% enriched within each cohort):
+
+  by email_type:
+    bucket    total  enriched  skipped  failed  enriched_pct
+    --------  -----  --------  -------  ------  ------------
+    no_email  399    290       0        0       72.7%       
+
+  by org_presence:
+    bucket  total  enriched  skipped  failed  enriched_pct
+    ------  -----  --------  -------  ------  ------------
+    no_org  399    290       0        0       72.7%       
+
+  by name_length:
+    bucket            total  enriched  skipped  failed  enriched_pct
+    ----------------  -----  --------  -------  ------  ------------
+    two_token         312    221       0        0       70.8%       
+    three_plus_token  86     68        0        0       79.1%       
+    single_token      1      1         0        0       100.0%      
+
+Source contribution (among 290 enriched profiles):
+  source           count  pct_of_enriched
+  ---------------  -----  ---------------
+  linkedin         290    100.0%         
+  website          0      0.0%           
+  twitter          0      0.0%           
+  other_links      0      0.0%           
+  fetched_content  0      0.0%           
+  resume           0      0.0%           
+  profile_card     290    100.0%         
+
+Enrichment version distribution:
+  version  count
+  -------  -----
+  (none)   399  
+
+Cost (estimated from enrichment_log):
+  total: $0.0
+  mean/profile: $0.0
+  p50/profile: $0.0
+  p95/profile: $0.0
+  totals: 0 search queries × $0.006 + 0 LinkedIn calls × $0.0168
+
+Log-pattern counts (across all profiles):
+  pattern  count
+  -------  -----

@@ -1,0 +1,249 @@
+========================================================================
+WRONG-PERSON AUDIT — cloud:TLS Applicants (14d49498)
+========================================================================
+
+Enriched population: 290  Sampled: 290
+Strong suspects (different last name, full uploaded name): 33
+Weak suspects (single-token uploaded name — ambiguous): 1
+Lower-bound wrong-person rate: 11.38% (projected ~33 across enriched population)
+Including weak suspects: 11.72%
+
+Suspected wrong-person matches (review these manually):
+
+  [1] uploaded: 'Antoinette Squire'
+      enriched: 'Ann Squire (CIM-MCIM), MBA'
+      email:    
+      linkedin: https://www.linkedin.com/in/ann-squire
+      overlap:  0.333  flags: token_overlap_below_50pct
+      last-name: uploaded='squire' enriched='squire'
+
+  [2] uploaded: 'Robert David Clements'
+      enriched: 'Rob Clements'
+      email:    
+      linkedin: https://www.linkedin.com/in/rob-clements-5602569
+      overlap:  0.25  flags: token_overlap_below_50pct
+      last-name: uploaded='clements' enriched='clements'
+
+  [3] uploaded: 'Nayan Sapers; Mira Jiang; Michelle Yang'
+      enriched: 'Nayan Sapers'
+      email:    
+      linkedin: https://linkedin.com/in/nayan-sapers
+      overlap:  0.333  flags: different_last_name, token_overlap_below_50pct
+      last-name: uploaded='yang' enriched='sapers'
+
+  [4] uploaded: 'Kisob Thomas Ngu'
+      enriched: 'Kisob Thomas'
+      email:    
+      linkedin: https://www.linkedin.com/in/kisob-thomas-aaaa35184?utm_source=share&utm_campaign=share_via&utm_content=profile&utm_medium=android_app
+      overlap:  0.667  flags: different_last_name
+      last-name: uploaded='ngu' enriched='thomas'
+
+  [5] uploaded: 'Matt Stults'
+      enriched: 'Matthew Stults'
+      email:    
+      linkedin: https://www.linkedin.com/in/matthew-stults-62763a4b/
+      overlap:  0.333  flags: token_overlap_below_50pct
+      last-name: uploaded='stults' enriched='stults'
+
+  [6] uploaded: 'Dr. Odongo Oduor Joseph'
+      enriched: 'Joseph Odongo, PhD'
+      email:    
+      linkedin: https://www.linkedin.com/in/joseph-odongo-phd-bb5b51178/
+      overlap:  0.5  flags: different_last_name
+      last-name: uploaded='joseph' enriched='odongo'
+
+  [7] uploaded: 'Deepshikha Deepshikha'
+      enriched: 'Dr. Deepshikha'
+      email:    
+      linkedin: https://www.linkedin.com/in/dr-deepshikha/
+      overlap:  0.333  flags: token_overlap_below_50pct
+      last-name: uploaded='deepshikha' enriched='deepshikha'
+
+  [8] uploaded: 'IRVING MARTINEZ PACHECO'
+      enriched: 'IRVING MARTINEZ, Ph.D.'
+      email:    
+      linkedin: https://www.linkedin.com/in/irving-martinez-p/
+      overlap:  0.667  flags: different_last_name
+      last-name: uploaded='pacheco' enriched='martinez'
+
+  [9] uploaded: 'Nicolas Rodriguez'
+      enriched: 'Nico Roddz'
+      email:    
+      linkedin: https://www.linkedin.com/in/nicoroddz/
+      overlap:  0.0  flags: different_last_name, no_shared_tokens
+      last-name: uploaded='rodriguez' enriched='roddz'
+
+  [10] uploaded: 'Matt Burnett'
+      enriched: 'Matthew Burnett'
+      email:    
+      linkedin: https://www.linkedin.com/in/matthew-j-b-burnett/
+      overlap:  0.333  flags: token_overlap_below_50pct
+      last-name: uploaded='burnett' enriched='burnett'
+
+  [11] uploaded: 'Richard Marr'
+      enriched: 'Hunter Wade'
+      email:    
+      linkedin: https://www.linkedin.com/in/hunter-wade-3b527325?utm_source=share&utm_campaign=share_via&utm_content=profile&utm_medium=android_app
+      overlap:  0.0  flags: different_last_name, no_shared_tokens
+      last-name: uploaded='marr' enriched='wade'
+
+  [12] uploaded: 'Matt Mazur'
+      enriched: 'Matthew Mazur'
+      email:    
+      linkedin: https://www.linkedin.com/in/mhmazur/
+      overlap:  0.333  flags: token_overlap_below_50pct
+      last-name: uploaded='mazur' enriched='mazur'
+
+  [13] uploaded: 'ACCELERATE EUROPE: European Implementation Partner for AI Preparedness'
+      enriched: 'Matthias Samwald'
+      email:    
+      linkedin: https://www.linkedin.com/in/matthiassamwald/
+      overlap:  0.0  flags: different_last_name, no_shared_tokens
+      last-name: uploaded='preparedness' enriched='samwald'
+
+  [14] uploaded: '3D printers to combat antimicrobial resistance.'
+      enriched: 'Aaron Hernandez-Cid, PhD'
+      email:    
+      linkedin: https://www.linkedin.com/in/aaronhdzid
+      overlap:  0.0  flags: different_last_name, no_shared_tokens
+      last-name: uploaded='resistance' enriched='hernandez-cid'
+
+  [15] uploaded: 'Leveling the Regulatory Playing Field for Small Biotech'
+      enriched: 'Flavia Amaral'
+      email:    
+      linkedin: https://www.linkedin.com/in/flavia-amaral-2763644/
+      overlap:  0.0  flags: different_last_name, no_shared_tokens
+      last-name: uploaded='biotech' enriched='amaral'
+
+  [16] uploaded: 'Praveen Ashok'
+      enriched: 'Praveen Ashok Kumar'
+      email:    
+      linkedin: https://www.linkedin.com/in/praveenashok/
+      overlap:  0.667  flags: different_last_name
+      last-name: uploaded='ashok' enriched='kumar'
+
+  [17] uploaded: 'Chiamaka Stellamaris Nwede'
+      enriched: 'Nwede Stellamaris Chiamaka'
+      email:    
+      linkedin: https://www.linkedin.com/in/nwede-stellamaris-chiamaka-954502224
+      overlap:  1.0  flags: different_last_name
+      last-name: uploaded='nwede' enriched='chiamaka'
+
+  [18] uploaded: 'Kamile Lukosiute and Alexis Carlier'
+      enriched: 'Kamilė Lukošiūtė'
+      email:    
+      linkedin: https://www.linkedin.com/in/kamilelukosiute/
+      overlap:  0.4  flags: different_last_name, token_overlap_below_50pct
+      last-name: uploaded='carlier' enriched='lukosiute'
+
+  [19] uploaded: 'Robyn Monaghan'
+      enriched: 'Rob Monaghan'
+      email:    
+      linkedin: https://www.linkedin.com/in/rob-monaghan-107a89246/
+      overlap:  0.333  flags: token_overlap_below_50pct
+      last-name: uploaded='monaghan' enriched='monaghan'
+
+  [20] uploaded: 'Nicholas Caputo'
+      enriched: 'Nick Caputo'
+      email:    
+      linkedin: https://www.linkedin.com/in/nickacaputo/
+      overlap:  0.333  flags: token_overlap_below_50pct
+      last-name: uploaded='caputo' enriched='caputo'
+
+  [21] uploaded: 'Yesh'
+      enriched: '(Yesh) Yeshodhara Baskaran'
+      email:    
+      linkedin: https://www.linkedin.com/in/yesh3
+      overlap:  0.0  flags: single_token_uploaded_name, no_shared_tokens
+      last-name: uploaded='yesh' enriched='baskaran'
+
+  [22] uploaded: 'Matthew Lubin'
+      enriched: 'Matt Lubin'
+      email:    
+      linkedin: https://www.linkedin.com/in/matt-lubin-jhu/
+      overlap:  0.333  flags: token_overlap_below_50pct
+      last-name: uploaded='lubin' enriched='lubin'
+
+  [23] uploaded: 'Sriharshita Musunuri'
+      enriched: 'Harshu Musunuri'
+      email:    
+      linkedin: https://www.linkedin.com/in/hmusu
+      overlap:  0.333  flags: token_overlap_below_50pct
+      last-name: uploaded='musunuri' enriched='musunuri'
+
+  [24] uploaded: 'Maximilian Görlitz + Christopher Strahle'
+      enriched: 'Maximilian Görlitz'
+      email:    
+      linkedin: https://www.linkedin.com/in/maximilian-goerlitz/
+      overlap:  0.5  flags: different_last_name
+      last-name: uploaded='strahle' enriched='gorlitz'
+
+  [25] uploaded: 'TEST The Launch Sequence'
+      enriched: 'Jay Kim'
+      email:    
+      linkedin: https://www.linkedin.com/in/jay-kim-690249339/
+      overlap:  0.0  flags: different_last_name, no_shared_tokens
+      last-name: uploaded='sequence' enriched='kim'
+
+  [26] uploaded: 'Samson Omohagbo Emmanuel'
+      enriched: 'Emmanuel Samson'
+      email:    
+      linkedin: https://www.linkedin.com/in/emmanuel-samson-03424029a?utm_source=share_via&utm_content=profile&utm_medium=member_android
+      overlap:  0.667  flags: different_last_name
+      last-name: uploaded='emmanuel' enriched='samson'
+
+  [27] uploaded: 'Theresa Clark'
+      enriched: 'Terri Clark'
+      email:    
+      linkedin: https://www.linkedin.com/in/taclark/
+      overlap:  0.333  flags: token_overlap_below_50pct
+      last-name: uploaded='clark' enriched='clark'
+
+  [28] uploaded: 'Benjamin John Schulz'
+      enriched: 'Ben Schulz'
+      email:    
+      linkedin: https://www.linkedin.com/in/ben-schulz-59a179198?utm_source=share&utm_campaign=share_via&utm_content=profile&utm_medium=android_app
+      overlap:  0.25  flags: token_overlap_below_50pct
+      last-name: uploaded='schulz' enriched='schulz'
+
+  [29] uploaded: 'Anna Kasdan & Claire Lunde'
+      enriched: 'Claire E Lunde, PhD, PMP'
+      email:    
+      linkedin: https://www.linkedin.com/in/clairelunde/
+      overlap:  0.4  flags: token_overlap_below_50pct
+      last-name: uploaded='lunde' enriched='lunde'
+
+  [30] uploaded: 'Adrián Melic Yagüe'
+      enriched: 'Adrián Melic'
+      email:    
+      linkedin: https://linkedin.com/in/adrianmelic
+      overlap:  0.667  flags: different_last_name
+      last-name: uploaded='yague' enriched='melic'
+
+  [31] uploaded: 'Maria Haugen'
+      enriched: 'Maria Catherine'
+      email:    
+      linkedin: https://www.linkedin.com/in/maria-foxx-health/
+      overlap:  0.333  flags: different_last_name, token_overlap_below_50pct
+      last-name: uploaded='haugen' enriched='catherine'
+
+  [32] uploaded: 'Guillem Bas'
+      enriched: 'Guillem Bas Graells'
+      email:    
+      linkedin: https://www.linkedin.com/in/guillembasgraells/
+      overlap:  0.667  flags: different_last_name
+      last-name: uploaded='bas' enriched='graells'
+
+  [33] uploaded: 'Bosco Hung'
+      enriched: 'Ho Ting Hung'
+      email:    
+      linkedin: https://www.linkedin.com/in/ho-ting-hung-080597222/
+      overlap:  0.25  flags: token_overlap_below_50pct
+      last-name: uploaded='hung' enriched='hung'
+
+  [34] uploaded: 'Adeoye Bolatito'
+      enriched: 'Bolatito Adeoye'
+      email:    
+      linkedin: https://www.linkedin.com/in/bolatito-adeoye-348385108?utm_source=share&utm_campaign=share_via&utm_content=profile&utm_medium=android_app
+      overlap:  1.0  flags: different_last_name
+      last-name: uploaded='bolatito' enriched='adeoye'

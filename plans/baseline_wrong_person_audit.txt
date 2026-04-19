@@ -1,0 +1,333 @@
+========================================================================
+WRONG-PERSON AUDIT — cloud:Invite tracker - TLS book launch - IFP Core 250 (c773996b)
+========================================================================
+
+Enriched population: 184  Sampled: 184
+Strong suspects (different last name, full uploaded name): 43
+Weak suspects (single-token uploaded name — ambiguous): 3
+Lower-bound wrong-person rate: 23.37% (projected ~43 across enriched population)
+Including weak suspects: 25.00%
+
+Suspected wrong-person matches (review these manually):
+
+  [1] uploaded: 'David Bahr'
+      enriched: 'David M.'
+      email:    david@thefai.org
+      linkedin: https://www.linkedin.com/in/davidmalouf
+      overlap:  0.333  flags: different_last_name, token_overlap_below_50pct
+      last-name: uploaded='bahr' enriched='m'
+
+  [2] uploaded: 'Micah Meadowcroft'
+      enriched: 'Micah Bennett'
+      email:    micah.d.meadowcroft@gmail.com
+      linkedin: https://www.linkedin.com/in/micah-bennett-36738b83
+      overlap:  0.333  flags: different_last_name, token_overlap_below_50pct
+      last-name: uploaded='meadowcroft' enriched='bennett'
+
+  [3] uploaded: 'Andrew Gerard'
+      enriched: 'Andrew Lo'
+      email:    andrew@ifp.org
+      linkedin: https://www.linkedin.com/in/andrewwlo
+      overlap:  0.333  flags: different_last_name, token_overlap_below_50pct
+      last-name: uploaded='gerard' enriched='lo'
+
+  [4] uploaded: 'Santi Ruiz'
+      enriched: 'Daniel Santi'
+      email:    santi@ifp.org
+      linkedin: https://www.linkedin.com/in/daniel-santi-3846a82
+      overlap:  0.333  flags: different_last_name, token_overlap_below_50pct
+      last-name: uploaded='ruiz' enriched='santi'
+
+  [5] uploaded: 'Daniel'
+      enriched: 'Daniel Lu, PhD'
+      email:    mx.danielw@gmail.com
+      linkedin: https://www.linkedin.com/in/danielbinlu
+      overlap:  0.5  flags: single_token_uploaded_name
+      last-name: uploaded='daniel' enriched='lu'
+
+  [6] uploaded: 'Nicholas Ritter'
+      enriched: 'Nicholas Brown'
+      email:    nicholas@ifp.org
+      linkedin: https://www.linkedin.com/in/nicholas-brown-8bbb2b14
+      overlap:  0.333  flags: different_last_name, token_overlap_below_50pct
+      last-name: uploaded='ritter' enriched='brown'
+
+  [7] uploaded: 'Justin Bullock'
+      enriched: 'Justin C.'
+      email:    justin@ari.us
+      linkedin: https://www.linkedin.com/in/justin-chen-
+      overlap:  0.333  flags: different_last_name, token_overlap_below_50pct
+      last-name: uploaded='bullock' enriched='c'
+
+  [8] uploaded: 'Luke'
+      enriched: 'Luke Bader'
+      email:    luke@thefai.org
+      linkedin: https://www.linkedin.com/in/lukebader
+      overlap:  0.5  flags: single_token_uploaded_name
+      last-name: uploaded='luke' enriched='bader'
+
+  [9] uploaded: 'Darius Meissner'
+      enriched: 'Darius G.'
+      email:    darius@horizonpublicservice.org
+      linkedin: https://www.linkedin.com/in/darius-goergen
+      overlap:  0.333  flags: different_last_name, token_overlap_below_50pct
+      last-name: uploaded='meissner' enriched='g'
+
+  [10] uploaded: 'Joan Gass'
+      enriched: 'Joan Bruna'
+      email:    joan@horizonpublicservice.org
+      linkedin: https://www.linkedin.com/in/joanbruna
+      overlap:  0.333  flags: different_last_name, token_overlap_below_50pct
+      last-name: uploaded='gass' enriched='bruna'
+
+  [11] uploaded: 'Katarina Watney'
+      enriched: 'Katarina Slama, PhD'
+      email:    katarina@horizonpublicservice.org
+      linkedin: https://www.linkedin.com/in/katarinaslama
+      overlap:  0.333  flags: different_last_name, token_overlap_below_50pct
+      last-name: uploaded='watney' enriched='slama'
+
+  [12] uploaded: 'Remco Zwetsloot'
+      enriched: 'Remco van de Pas'
+      email:    remco@horizonpublicservice.org
+      linkedin: https://www.linkedin.com/in/remco-van-de-pas-1418722b
+      overlap:  0.2  flags: different_last_name, token_overlap_below_50pct
+      last-name: uploaded='zwetsloot' enriched='pas'
+
+  [13] uploaded: 'Jennifer Pahlka'
+      enriched: 'Jen Hm'
+      email:    jen@pahlka.com
+      linkedin: https://www.linkedin.com/in/jen-hm-814478190
+      overlap:  0.0  flags: different_last_name, no_shared_tokens
+      last-name: uploaded='pahlka' enriched='hm'
+
+  [14] uploaded: 'Abigail Ball'
+      enriched: 'Abigail Chan'
+      email:    abigail.ball@americancompass.org
+      linkedin: https://www.linkedin.com/in/abigail-chan-a74aa5120
+      overlap:  0.333  flags: different_last_name, token_overlap_below_50pct
+      last-name: uploaded='ball' enriched='chan'
+
+  [15] uploaded: 'Ari Kagan'
+      enriched: 'Ari Holtzman'
+      email:    ari@thefai.org
+      linkedin: https://www.linkedin.com/in/ari-holtzman-1b620a149
+      overlap:  0.333  flags: different_last_name, token_overlap_below_50pct
+      last-name: uploaded='kagan' enriched='holtzman'
+
+  [16] uploaded: 'Dan Turner-Evans'
+      enriched: 'Daniel Evans'
+      email:    dan.turner.evans@pm.me
+      linkedin: https://www.linkedin.com/in/daniel-evans-66828591
+      overlap:  0.0  flags: different_last_name, no_shared_tokens
+      last-name: uploaded='turner-evans' enriched='evans'
+
+  [17] uploaded: 'Evan McVail'
+      enriched: 'Evan Gomez, MBA'
+      email:    evan.mcvail@americancompass.org
+      linkedin: https://www.linkedin.com/in/evan-gomez-mba-3bb44b125
+      overlap:  0.333  flags: different_last_name, token_overlap_below_50pct
+      last-name: uploaded='mcvail' enriched='gomez'
+
+  [18] uploaded: 'Evan Riggs'
+      enriched: 'Evan Gomez, MBA'
+      email:    evan.riggs@thefai.org
+      linkedin: https://www.linkedin.com/in/evan-gomez-mba-3bb44b125
+      overlap:  0.333  flags: different_last_name, token_overlap_below_50pct
+      last-name: uploaded='riggs' enriched='gomez'
+
+  [19] uploaded: 'Joshua New'
+      enriched: 'Josh Wolfe'
+      email:    josh@seedai.org
+      linkedin: https://www.linkedin.com/in/josh-wolfe-7883
+      overlap:  0.0  flags: different_last_name, no_shared_tokens
+      last-name: uploaded='new' enriched='wolfe'
+
+  [20] uploaded: 'Max Bodach'
+      enriched: 'Max Bloom'
+      email:    max@thefai.org
+      linkedin: https://www.linkedin.com/in/max-bloom-07240624
+      overlap:  0.333  flags: different_last_name, token_overlap_below_50pct
+      last-name: uploaded='bodach' enriched='bloom'
+
+  [21] uploaded: 'Matthew Meyers'
+      enriched: 'Mark Meyers'
+      email:    mmeyers@niskanencenter.org
+      linkedin: https://www.linkedin.com/in/mmeyers
+      overlap:  0.333  flags: token_overlap_below_50pct
+      last-name: uploaded='meyers' enriched='meyers'
+
+  [22] uploaded: 'Nat Purser'
+      enriched: 'Nat Robinson'
+      email:    nat@publicknowledge.org
+      linkedin: https://www.linkedin.com/in/nat-robinson
+      overlap:  0.333  flags: different_last_name, token_overlap_below_50pct
+      last-name: uploaded='purser' enriched='robinson'
+
+  [23] uploaded: 'Paolo Mastrangelo'
+      enriched: 'Pier Paolo Poli'
+      email:    paolo@vial.com
+      linkedin: https://www.linkedin.com/in/pierpaolopoli
+      overlap:  0.25  flags: different_last_name, token_overlap_below_50pct
+      last-name: uploaded='mastrangelo' enriched='poli'
+
+  [24] uploaded: 'Ben Reinhardt'
+      enriched: 'Ben Sigelman'
+      email:    ben@spec.tech
+      linkedin: https://www.linkedin.com/in/bensigelman
+      overlap:  0.333  flags: different_last_name, token_overlap_below_50pct
+      last-name: uploaded='reinhardt' enriched='sigelman'
+
+  [25] uploaded: 'Samuel Hammond'
+      enriched: 'Samuel Hawksford White'
+      email:    samuel@thefai.org
+      linkedin: https://www.linkedin.com/in/samuel-hawksford-white-386bba111
+      overlap:  0.25  flags: different_last_name, token_overlap_below_50pct
+      last-name: uploaded='hammond' enriched='white'
+
+  [26] uploaded: 'Sophia Brown-Heidenreich'
+      enriched: 'Sophia Liu'
+      email:    sophia@thefai.org
+      linkedin: https://www.linkedin.com/in/sophia-liu
+      overlap:  0.333  flags: different_last_name, token_overlap_below_50pct
+      last-name: uploaded='brown-heidenreich' enriched='liu'
+
+  [27] uploaded: 'Sean Tierney'
+      enriched: 'Steve Tierney'
+      email:    stierney@arnoldventures.org
+      linkedin: https://www.linkedin.com/in/sjtierney
+      overlap:  0.333  flags: token_overlap_below_50pct
+      last-name: uploaded='tierney' enriched='tierney'
+
+  [28] uploaded: 'Thomas Hochman'
+      enriched: 'Thomas Malone'
+      email:    thomas@thefai.org
+      linkedin: https://www.linkedin.com/in/thomas-malone-2aa3a
+      overlap:  0.333  flags: different_last_name, token_overlap_below_50pct
+      last-name: uploaded='hochman' enriched='malone'
+
+  [29] uploaded: 'Dan Lips'
+      enriched: 'Dan Fragiadakis, PhD'
+      email:    dan@thefai.org
+      linkedin: https://www.linkedin.com/in/dan-fragiadakis-phd
+      overlap:  0.333  flags: different_last_name, token_overlap_below_50pct
+      last-name: uploaded='lips' enriched='fragiadakis'
+
+  [30] uploaded: 'Juan C'
+      enriched: 'Juan C. Lopez'
+      email:    juancambeiro1015@gmail.com
+      linkedin: https://www.linkedin.com/in/juan-c-lopez
+      overlap:  0.667  flags: different_last_name
+      last-name: uploaded='c' enriched='lopez'
+
+  [31] uploaded: 'Lennart'
+      enriched: 'Lennart Oser'
+      email:    lennart@heim.xyz
+      linkedin: https://www.linkedin.com/in/lennartoser
+      overlap:  0.5  flags: single_token_uploaded_name
+      last-name: uploaded='lennart' enriched='oser'
+
+  [32] uploaded: 'Anna Ringvold'
+      enriched: 'Anna Roumiantseva'
+      email:    anna@horizonpublicservice.org
+      linkedin: https://www.linkedin.com/in/annaroumiantseva
+      overlap:  0.333  flags: different_last_name, token_overlap_below_50pct
+      last-name: uploaded='ringvold' enriched='roumiantseva'
+
+  [33] uploaded: 'Kelsey Henquinet'
+      enriched: 'Kelsey Hawkins'
+      email:    kelsey@iaps.ai
+      linkedin: https://www.linkedin.com/in/kelsey-hawkins
+      overlap:  0.333  flags: different_last_name, token_overlap_below_50pct
+      last-name: uploaded='henquinet' enriched='hawkins'
+
+  [34] uploaded: 'Marc Levitt'
+      enriched: 'Marc A.'
+      email:    marc@thebreakthrough.org
+      linkedin: https://www.linkedin.com/in/marcambinder
+      overlap:  0.333  flags: different_last_name, token_overlap_below_50pct
+      last-name: uploaded='levitt' enriched='a'
+
+  [35] uploaded: 'Moritz Hanke'
+      enriched: 'moritz heim'
+      email:    moritz.s.hanke@gmail.com
+      linkedin: https://www.linkedin.com/in/moritz-heim-747549212
+      overlap:  0.333  flags: different_last_name, token_overlap_below_50pct
+      last-name: uploaded='hanke' enriched='heim'
+
+  [36] uploaded: 'Daniel Kishi'
+      enriched: 'Daniel Lu, PhD'
+      email:    daniel.kishi@americancompass.org
+      linkedin: https://www.linkedin.com/in/danielbinlu
+      overlap:  0.333  flags: different_last_name, token_overlap_below_50pct
+      last-name: uploaded='kishi' enriched='lu'
+
+  [37] uploaded: 'Milica Cosic'
+      enriched: 'Milica Ilic'
+      email:    milica@eig.org
+      linkedin: https://www.linkedin.com/in/milica-ilic-440a64208
+      overlap:  0.333  flags: different_last_name, token_overlap_below_50pct
+      last-name: uploaded='cosic' enriched='ilic'
+
+  [38] uploaded: 'Allan Buchness'
+      enriched: 'Allan J.'
+      email:    allan@ifp.org
+      linkedin: https://www.linkedin.com/in/allanjabri
+      overlap:  0.333  flags: different_last_name, token_overlap_below_50pct
+      last-name: uploaded='buchness' enriched='j'
+
+  [39] uploaded: 'Ben Schifman'
+      enriched: 'Ben Sigelman'
+      email:    ben@ifp.org
+      linkedin: https://www.linkedin.com/in/bensigelman
+      overlap:  0.333  flags: different_last_name, token_overlap_below_50pct
+      last-name: uploaded='schifman' enriched='sigelman'
+
+  [40] uploaded: 'Claire Larkin'
+      enriched: 'Claire Wang'
+      email:    claire@ifp.org
+      linkedin: https://www.linkedin.com/in/claire-wang-riceu
+      overlap:  0.333  flags: different_last_name, token_overlap_below_50pct
+      last-name: uploaded='larkin' enriched='wang'
+
+  [41] uploaded: 'Ari kagan'
+      enriched: 'Ari Holtzman'
+      email:    ari@ifp.org
+      linkedin: https://www.linkedin.com/in/ari-holtzman-1b620a149
+      overlap:  0.333  flags: different_last_name, token_overlap_below_50pct
+      last-name: uploaded='kagan' enriched='holtzman'
+
+  [42] uploaded: "Arielle D'Souza"
+      enriched: 'Arielle D.'
+      email:    arielle@ifp.org
+      linkedin: https://www.linkedin.com/in/arielleduperval
+      overlap:  0.667  flags: different_last_name
+      last-name: uploaded='souza' enriched='d'
+
+  [43] uploaded: 'Arnab datta'
+      enriched: 'Arnab Dey, PhD'
+      email:    arnab@ifp.org
+      linkedin: https://www.linkedin.com/in/arnabdey0503
+      overlap:  0.333  flags: different_last_name, token_overlap_below_50pct
+      last-name: uploaded='datta' enriched='dey'
+
+  [44] uploaded: 'Beez Africa'
+      enriched: 'Beez Labs'
+      email:    beez@ifp.org
+      linkedin: https://www.linkedin.com/in/beezlabs
+      overlap:  0.333  flags: different_last_name, token_overlap_below_50pct
+      last-name: uploaded='africa' enriched='labs'
+
+  [45] uploaded: 'Jonah Weimbaum'
+      enriched: 'Jonah Nigh'
+      email:    jonah@ifp.org
+      linkedin: https://www.linkedin.com/in/jonah-nigh-1a73577
+      overlap:  0.333  flags: different_last_name, token_overlap_below_50pct
+      last-name: uploaded='weimbaum' enriched='nigh'
+
+  [46] uploaded: 'Dan Turner-Evans'
+      enriched: 'Dan Fragiadakis, PhD'
+      email:    dan@ifp.org
+      linkedin: https://www.linkedin.com/in/dan-fragiadakis-phd
+      overlap:  0.333  flags: different_last_name, token_overlap_below_50pct
+      last-name: uploaded='turner-evans' enriched='fragiadakis'

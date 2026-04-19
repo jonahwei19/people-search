@@ -1,0 +1,73 @@
+========================================================================
+COVERAGE REPORT — cloud:Invite tracker - TLS book launch - IFP Core 250 (c773996b)
+========================================================================
+
+Total profiles: 302
+
+Status distribution:
+  status    count  pct  
+  --------  -----  -----
+  enriched  184    60.9%
+  pending   1      0.3% 
+  skipped   91     30.1%
+  failed    26     8.6% 
+
+Cohort breakdown (% enriched within each cohort):
+
+  by email_type:
+    bucket    total  enriched  skipped  failed  enriched_pct
+    --------  -----  --------  -------  ------  ------------
+    org       136    84        42       9       61.8%       
+    personal  101    64        30       7       63.4%       
+    corp      34     22        8        4       64.7%       
+    gov       20     11        6        3       55.0%       
+    edu       11     3         5        3       27.3%       
+
+  by org_presence:
+    bucket       total  enriched  skipped  failed  enriched_pct
+    -----------  -----  --------  -------  ------  ------------
+    org_present  248    181       43       23      73.0%       
+    no_org       54     3         48       3       5.6%        
+
+  by name_length:
+    bucket            total  enriched  skipped  failed  enriched_pct
+    ----------------  -----  --------  -------  ------  ------------
+    two_token         275    177       73       24      64.4%       
+    three_plus_token  11     4         5        2       36.4%       
+    no_name           9      0         9        0       0.0%        
+    single_token      7      3         4        0       42.9%       
+
+Source contribution (among 184 enriched profiles):
+  source           count  pct_of_enriched
+  ---------------  -----  ---------------
+  linkedin         184    100.0%         
+  website          0      0.0%           
+  twitter          0      0.0%           
+  other_links      0      0.0%           
+  fetched_content  0      0.0%           
+  resume           0      0.0%           
+  profile_card     184    100.0%         
+
+Enrichment version distribution:
+  version  count
+  -------  -----
+  (none)   302  
+
+Cost (estimated from enrichment_log):
+  total: $7.6932
+  mean/profile: $0.0255
+  p50/profile: $0.0288
+  p95/profile: $0.0408
+  totals: 739 search queries × $0.006 + 194 LinkedIn calls × $0.0168
+
+Log-pattern counts (across all profiles):
+  pattern               count
+  --------------------  -----
+  search_query          739  
+  trying_linkedin       194  
+  verify_accepted       184  
+  org_mismatch_generic  50   
+  org_mismatch          41   
+  no_linkedin_found     33   
+  enrichlayer_error     26   
+  verify_rejected       14   
