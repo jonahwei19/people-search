@@ -88,7 +88,12 @@ class handler(BaseHTTPRequestHandler):
                         _fetch_one_profile(p)
                     except Exception:
                         pass  # link fetch failure shouldn't kill re-enrichment
-            storage.save_profiles(dataset.id, dataset.profiles)
+            # IO fix: only write the chunk, not the whole dataset. Previously
+            # every chunk re-wrote all N profiles (JSONB-heavy rows), which
+            # amplified writes by ~N× chunk_count and burned Supabase's disk IO
+            # budget. N=400, chunk=10 → 40 chunks × 400 rows = 16k writes
+            # instead of 400.
+            storage.save_profiles(dataset.id, chunk)
 
             done_count = sum(1 for p in dataset.profiles
                              if p.enrichment_status != EnrichmentStatus.PENDING)
