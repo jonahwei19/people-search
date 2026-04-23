@@ -42,7 +42,7 @@ class handler(BaseHTTPRequestHandler):
 
                     from enrichment.enrichers import normalize_linkedin_url
                     url = normalize_linkedin_url(new_url)
-                    api_data = pipeline.enricher._call_api(url)
+                    api_data, _reason = pipeline.enricher._call_api(url)
 
                     if api_data and api_data != "OUT_OF_CREDITS":
                         parsed = pipeline.enricher._parse_response(api_data)

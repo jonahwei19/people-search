@@ -144,7 +144,7 @@ def test_easy_linkedin_already_has_url() -> None:
     get_mock = _build_unified_requests_get()
     with patch.object(org_site, "_fetch", return_value=(404, "")), \
          patch.object(vertical_openalex.requests, "get", side_effect=get_mock), \
-         patch("enrichment.enrichers.LinkedInEnricher._call_api", return_value={
+         patch("enrichment.enrichers.LinkedInEnricher._call_api", return_value=({
             "full_name": "Charlie Patel",
             "full_name_lower": "charlie patel",
             "occupation": "CTO",
@@ -154,7 +154,7 @@ def test_easy_linkedin_already_has_url() -> None:
             "location_str": "SF",
             "summary": "",
             "headline": "CTO at Acme",
-         }):
+         }, "ok")):
         r = orch.run_profile_v2(p, orch.IdentityResolver(), orch.LinkedInEnricher())
 
     assert r.state in ("enriched", "thin"), f"expected enriched, got {r.state}: {r.log[:10]}"

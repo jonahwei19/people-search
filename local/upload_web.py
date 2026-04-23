@@ -407,7 +407,7 @@ def api_profile_linkedin(profile_id):
 
                 # Enrich via EnrichLayer (skip verification — user provided this URL)
                 url = normalize_linkedin_url(new_url)
-                api_data = PIPELINE.enricher._call_api(url)
+                api_data, _reason = PIPELINE.enricher._call_api(url)
 
                 if api_data and api_data != "OUT_OF_CREDITS":
                     parsed = PIPELINE.enricher._parse_response(api_data)

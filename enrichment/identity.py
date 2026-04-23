@@ -540,8 +540,14 @@ class IdentityResolver:
         self.serper_key = serper_api_key or os.environ.get("SERPER_API_KEY", "")
         self.rate_limit = rate_limit
 
-    def resolve_profile(self, profile: Profile) -> ResolveResult:
-        """Run full resolution pipeline for a single profile."""
+    def resolve_profile(self, profile: Profile, evidence_only: bool = False) -> ResolveResult:
+        """Run full resolution pipeline for a single profile.
+
+        When `evidence_only=True`, skip scoring LinkedIn candidates (the
+        user already has a LinkedIn URL we trust) but still gather and
+        return non-LinkedIn evidence URLs so the caller can populate
+        website_url / twitter_url / other_links / fetched_content.
+        """
         log = []
         ctx = _extract_context(profile)
 
@@ -554,7 +560,10 @@ class IdentityResolver:
         name = ctx["name"]
         first = ctx.get("first", "")
         last = ctx.get("last", "")
-        log.append(f"Resolving: {name} (org={ctx.get('org','?')}, email={ctx.get('email','?')})")
+        log.append(
+            f"Resolving: {name} (org={ctx.get('org','?')}, email={ctx.get('email','?')})"
+            + (" [evidence-only: user-provided LinkedIn]" if evidence_only else "")
+        )
 
         all_candidates = []
         queries_run = set()
@@ -831,6 +840,13 @@ class IdentityResolver:
             if url not in seen:
                 seen.add(url)
                 unique.append(c)
+
+        # Evidence-only mode: we already have a user-provided LinkedIn URL
+        # on the profile and don't want to find / score new LinkedIn candidates.
+        # Return just the non-LinkedIn evidence we gathered along the way.
+        if evidence_only:
+            log.append(f"  Evidence-only: retained {len(evidence_urls)} non-LinkedIn URLs")
+            return ResolveResult(log=log, evidence_urls=evidence_urls)
 
         if not unique:
             log.append(f"  No LinkedIn profiles found across all searches ({len(evidence_urls)} non-LinkedIn evidence URLs retained)")
@@ -1220,44 +1236,76 @@ class IdentityResolver:
         """Resolve LinkedIn URLs for profiles in parallel."""
         import concurrent.futures
 
-        to_resolve = [
+        # Two cohorts:
+        #   (A) profiles missing a LinkedIn URL → run full resolution (search
+        #       for LinkedIn + collect non-LinkedIn evidence alongside).
+        #   (B) profiles WITH a user-provided LinkedIn URL → skip the
+        #       LinkedIn-finding step, but STILL do a non-LinkedIn evidence
+        #       search so we populate website/twitter/github/other links.
+        to_resolve_full = [
             p for p in profiles
             if not p.linkedin_url
             and p.name
             and p.enrichment_status == EnrichmentStatus.PENDING
         ]
+        to_evidence_only = [
+            p for p in profiles
+            if p.linkedin_url
+            and p.name
+            and p.enrichment_status == EnrichmentStatus.PENDING
+            and not (p.website_url or p.twitter_url or p.other_links)
+        ]
 
-        stats = {"resolved": 0, "failed": 0, "skipped": 0, "total": len(to_resolve)}
+        stats = {
+            "resolved": 0, "failed": 0, "skipped": 0,
+            "evidence_only": len(to_evidence_only),
+            "total": len(to_resolve_full) + len(to_evidence_only),
+        }
         completed = [0]
+        total_work = len(to_resolve_full) + len(to_evidence_only)
 
-        def do_resolve(profile: Profile) -> tuple[Profile, ResolveResult]:
+        def do_resolve(profile: Profile) -> tuple[Profile, ResolveResult, str]:
+            # Full mode → returns LinkedIn + evidence URLs
             result = self.resolve_profile(profile)
-            return profile, result
+            return profile, result, "full"
+
+        def do_evidence_only(profile: Profile) -> tuple[Profile, ResolveResult, str]:
+            # Evidence-only mode → trust the user's LinkedIn, skip the
+            # LinkedIn-candidate scoring, but still run the non-LinkedIn
+            # searches so `_save_evidence_urls` can populate website_url
+            # / twitter_url / other_links / fetched_content.
+            result = self.resolve_profile(profile, evidence_only=True)
+            return profile, result, "evidence_only"
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-            futures = {executor.submit(do_resolve, p): p for p in to_resolve}
+            futures = {}
+            for p in to_resolve_full:
+                futures[executor.submit(do_resolve, p)] = p
+            for p in to_evidence_only:
+                futures[executor.submit(do_evidence_only, p)] = p
 
             for future in concurrent.futures.as_completed(futures):
-                profile, result = future.result()
+                profile, result, mode = future.result()
                 completed[0] += 1
 
                 if on_progress:
-                    on_progress(completed[0], len(to_resolve), f"Resolved {profile.display_name()}")
+                    on_progress(completed[0], total_work, f"Resolved {profile.display_name()}")
 
                 profile.enrichment_log.extend(result.log)
 
-                if result.linkedin_url:
-                    profile.linkedin_url = result.linkedin_url
-                    profile.linkedin_url_source = "resolved"
-                    profile.enrichment_log.append(f"→ LinkedIn: {result.linkedin_url} ({result.confidence})")
-                    stats["resolved"] += 1
-                else:
-                    profile.enrichment_log.append(f"→ Not found: {result.error}")
-                    stats["failed"] += 1
+                if mode == "full":
+                    if result.linkedin_url:
+                        profile.linkedin_url = result.linkedin_url
+                        profile.linkedin_url_source = "resolved"
+                        profile.enrichment_log.append(f"→ LinkedIn: {result.linkedin_url} ({result.confidence})")
+                        stats["resolved"] += 1
+                    else:
+                        profile.enrichment_log.append(f"→ Not found: {result.error}")
+                        stats["failed"] += 1
+                # evidence_only: keep the user's LinkedIn URL intact; don't
+                # update linkedin_url_source (it's already "user").
 
-                # Save non-LinkedIn evidence URLs regardless of LinkedIn outcome.
-                # Each URL is verified (strong/medium/none) against the person's
-                # name, email domain, and URL slug — rejects common-name collisions.
+                # Save non-LinkedIn evidence URLs regardless of mode.
                 if result.evidence_urls:
                     retained = _save_evidence_urls(profile, result.evidence_urls)
                     profile.enrichment_log.append(

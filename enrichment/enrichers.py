@@ -95,13 +95,26 @@ class LinkedInEnricher:
             url = normalize_linkedin_url(url)
             profile.enrichment_log.append(f"Trying LinkedIn: {url}")
 
-            data = self._call_api(url)
+            data, reason = self._call_api(url)
             if data == "OUT_OF_CREDITS":
                 return EnrichmentResult(success=False, error="Out of API credits", cost=total_cost)
             if data is None:
-                profile.enrichment_log.append(f"  → API returned no data")
+                # Record the specific reason so transient vs permanent is
+                # visible in the log. "404_not_found" / "api_error_field"
+                # mean permanent (no profile exists). "empty_body" /
+                # "transient_exhausted" / "5xx_persisted" / "non_200:503"
+                # are transient — profile stays PENDING for the next run.
+                profile.enrichment_log.append(f"  → API returned no data ({reason})")
                 total_cost += self._cost_per_call
-                api_errors += 1
+                # Only count as a retryable API error if the reason is
+                # actually transient. 404 and API-error-field are permanent
+                # "this person doesn't exist on LinkedIn" — retrying won't help.
+                transient = reason in (
+                    "empty_body", "transient_exhausted", "5xx_persisted",
+                    "429_rate_limited_exhausted", "json_parse_error",
+                ) or reason.startswith("non_200:5")
+                if transient:
+                    api_errors += 1
                 continue
 
             total_cost += self._cost_per_call
@@ -802,14 +815,26 @@ class LinkedInEnricher:
 
         return stats
 
-    def _call_api(self, linkedin_url: str, retries: int = 2) -> dict | str | None:
-        """Call EnrichLayer API. Returns parsed JSON, 'OUT_OF_CREDITS', or None.
+    def _call_api(
+        self, linkedin_url: str, retries: int = 2, _soft_retried: bool = False
+    ) -> tuple[dict | str | None, str]:
+        """Call EnrichLayer API. Returns (result, reason_tag).
+
+        result is: parsed JSON dict, "OUT_OF_CREDITS", or None.
+        reason_tag is a short identifier the caller can log — one of:
+          "ok", "404_not_found", "429_rate_limited_exhausted",
+          "5xx_persisted", "non_200:<code>", "empty_body",
+          "json_parse_error", "api_error_field", "transient_exhausted",
+          "no_api_key", "out_of_credits".
 
         Retries transient network failures (timeout / connection reset / 5xx)
-        with exponential backoff. 429 rate-limit still uses Retry-After.
+        with exponential backoff via retry_request. 429 rate-limit still uses
+        Retry-After. 200-with-empty-body and 200-with-error-field now get
+        one soft retry (some EnrichLayer edge cases return those transiently
+        before succeeding).
         """
         if not self.api_key:
-            return None
+            return None, "no_api_key"
 
         from ._retry import retry_request
 
@@ -825,10 +850,10 @@ class LinkedInEnricher:
             label=f"EnrichLayer {linkedin_url[-32:]}",
         )
         if resp is None:
-            return None
+            return None, "transient_exhausted"
 
         if resp.status_code in (402, 403) and "credits" in resp.text.lower():
-            return "OUT_OF_CREDITS"
+            return "OUT_OF_CREDITS", "out_of_credits"
 
         if resp.status_code == 429:
             if retries > 0:
@@ -840,28 +865,44 @@ class LinkedInEnricher:
                 )
                 time.sleep(wait)
                 return self._call_api(linkedin_url, retries=retries - 1)
-            return None
+            return None, "429_rate_limited_exhausted"
 
         if resp.status_code == 404:
-            return None
+            return None, "404_not_found"
+
+        if 500 <= resp.status_code < 600:
+            return None, "5xx_persisted"
 
         if resp.status_code != 200:
             print(
                 f"  API error {resp.status_code}: {resp.text[:100]}",
                 file=sys.stderr,
             )
-            return None
+            return None, f"non_200:{resp.status_code}"
+
+        # 200 but possibly empty body — treat as transient, soft-retry once.
+        body = resp.text.strip()
+        if not body:
+            if not _soft_retried:
+                time.sleep(2.0)
+                return self._call_api(linkedin_url, retries=retries, _soft_retried=True)
+            return None, "empty_body"
 
         try:
             data = resp.json()
         except Exception as e:
             print(f"  JSON parse failed: {e}", file=sys.stderr)
-            return None
+            return None, "json_parse_error"
 
         if isinstance(data, dict) and data.get("error"):
-            return None
+            # Soft-retry once on "error" field — sometimes EnrichLayer returns
+            # {"error": "..."} on a transient hiccup then succeeds on retry.
+            if not _soft_retried:
+                time.sleep(2.0)
+                return self._call_api(linkedin_url, retries=retries, _soft_retried=True)
+            return None, "api_error_field"
 
-        return data
+        return data, "ok"
 
     def _parse_response(self, data: dict) -> dict:
         """Parse EnrichLayer response into our normalized format."""
