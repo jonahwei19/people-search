@@ -1248,6 +1248,7 @@ class IdentityResolver:
 
                 if result.linkedin_url:
                     profile.linkedin_url = result.linkedin_url
+                    profile.linkedin_url_source = "resolved"
                     profile.enrichment_log.append(f"→ LinkedIn: {result.linkedin_url} ({result.confidence})")
                     stats["resolved"] += 1
                 else:

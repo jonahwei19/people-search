@@ -27,6 +27,10 @@ class Profile:
     name: str = ""
     email: str = ""
     linkedin_url: str = ""
+    # Where `linkedin_url` came from. "user" = uploaded by the user (ground
+    # truth, trust it). "resolved" = found by identity search (less certain,
+    # must pass the strict verifier). "" = not set.
+    linkedin_url_source: str = ""
     organization: str = ""
     title: str = ""
     phone: str = ""

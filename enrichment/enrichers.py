@@ -150,7 +150,12 @@ class LinkedInEnricher:
         # not a wrong-person conclusion — it's an external-API failure that
         # should be retried later. Mark as PENDING so a re-enrichment picks
         # it up, rather than FAILED which means "we tried and rejected."
-        profile.linkedin_url = ""
+        # Preserve user-provided URLs even on verifier rejection — the user
+        # asserted this is the right profile, and clearing their input would
+        # lose ground-truth data. The verifier now trusts user-provided URLs
+        # anyway, so this is belt-and-suspenders.
+        if getattr(profile, "linkedin_url_source", "") != "user":
+            profile.linkedin_url = ""
         if api_errors == len(urls_to_try) and api_errors > 0:
             profile.enrichment_status = EnrichmentStatus.PENDING
             profile.enrichment_log.append(
@@ -219,6 +224,48 @@ class LinkedInEnricher:
         # failures by reason category without re-parsing strings.
         anchors_positive: list[str] = []
         anchors_negative: list[str] = []
+
+        # Trust user-provided LinkedIn URLs: the user literally pointed at this
+        # profile. Only reject if the names have ZERO token overlap (a clear
+        # wrong paste). Skip the spurious-match guards that exist to catch
+        # common-name collisions from search — they don't apply to direct
+        # uploads where "Arpitha Peteru" vs LinkedIn's privacy-abbreviated
+        # "Arpitha P" is a legitimate match.
+        url_source = getattr(profile, "linkedin_url_source", "")
+        if url_source == "user":
+            import unicodedata as _u
+            def _norm(s):
+                return "".join(c for c in _u.normalize("NFD", s or "") if _u.category(c) != "Mn").lower()
+            p_tok = set(_norm(profile.name or "").replace("-", " ").split())
+            e_tok = set(_norm(enriched.get("full_name") or "").replace("-", " ").split())
+            if p_tok and e_tok and not (p_tok & e_tok):
+                log.append(
+                    f"  Verify user-provided URL: REJECTED (zero name overlap — "
+                    f"'{profile.name}' vs '{enriched.get('full_name','')}')"
+                )
+                self._record_verification_decision(
+                    profile,
+                    linkedin_url=linkedin_url,
+                    enriched_name=enriched.get("full_name") or "",
+                    score=0,
+                    anchors_positive=["user_provided"],
+                    anchors_negative=["name_zero_overlap"],
+                    decision="reject",
+                    reason="user_provided_but_names_disjoint",
+                )
+                return False, log
+            log.append(f"  Verify user-provided URL: ACCEPTED (trusting upload)")
+            self._record_verification_decision(
+                profile,
+                linkedin_url=linkedin_url,
+                enriched_name=enriched.get("full_name") or "",
+                score=99,
+                anchors_positive=["user_provided"],
+                anchors_negative=[],
+                decision="accept",
+                reason="user_provided_linkedin_url_trusted",
+            )
+            return True, log
 
         # Name check (required)
         import unicodedata

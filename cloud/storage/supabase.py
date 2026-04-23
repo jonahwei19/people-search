@@ -435,6 +435,12 @@ class SupabaseStorage:
         pid = getattr(profile, "person_id", "")
         if pid:
             row["person_id"] = pid
+        # linkedin_url_source lets the verifier know whether to trust this URL.
+        # "user" / "resolved" / "". Conditional write so pre-migration schemas
+        # (before column added) don't reject the upsert.
+        src = getattr(profile, "linkedin_url_source", "")
+        if src:
+            row["linkedin_url_source"] = src
         if dataset_id is not None:
             row["dataset_id"] = dataset_id
         return row
@@ -485,6 +491,7 @@ class SupabaseStorage:
             enriched_organization=row.get("enriched_organization") or "",
             enriched_title=row.get("enriched_title") or "",
             person_id=row.get("person_id") or "",
+            linkedin_url_source=row.get("linkedin_url_source") or "",
         )
 
     def _search_to_row(self, search: DefinedSearch) -> dict:

@@ -462,6 +462,7 @@ class EnrichmentPipeline:
                     profile.email = value
                 case FieldType.IDENTITY_LINKEDIN:
                     profile.linkedin_url = value
+                    profile.linkedin_url_source = "user"  # uploaded → trust
                 case FieldType.IDENTITY_ORG:
                     profile.organization = value
                 case FieldType.IDENTITY_TITLE:
