@@ -487,7 +487,7 @@ window.APP_MODE = '{{APP_MODE}}';
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
           <div style="font-size:13px;color:var(--text2);" id="search-results-header"></div>
           <div style="display:flex;gap:8px;align-items:center;">
-            <select id="search-dataset-results" style="padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12px;" onchange="searchRerun()"><option value="">All datasets</option></select>
+            <select id="search-dataset-results" style="padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12px;" onchange="onResultsDatasetChange()"><option value="">All datasets</option></select>
             <button class="btn" onclick="searchRerun()" id="btn-rerun">Re-run with feedback</button>
             <button class="btn" onclick="searchBackToPicker()">Back</button>
           </div>
@@ -1663,10 +1663,34 @@ async function loadSearchList() {
 async function loadSearchDatasets() {
   const {datasets} = await (await apiFetch('/api/search/datasets')).json();
   const opts = '<option value="">All datasets</option>' + datasets.map(d => `<option value="${d.id}">${d.name} (${d.profiles})</option>`).join('');
+  const validIds = new Set(datasets.map(d => d.id).concat(['']));
   const sel = document.getElementById('search-dataset');
-  if (sel) sel.innerHTML = opts;
+  if (sel) {
+    const prev = sel.value;
+    sel.innerHTML = opts;
+    if (validIds.has(prev)) sel.value = prev;
+  }
   const sel2 = document.getElementById('search-dataset-results');
-  if (sel2) sel2.innerHTML = opts;
+  if (sel2) {
+    // Preserve the currently-selected dataset across re-renders. Priority:
+    // 1. whatever's already selected in the element, 2. per-search localStorage,
+    // 3. default ("All datasets"). Without this the value reverts every time
+    // this function is called (on showPage + on each searchShowResults).
+    const prev = sel2.value;
+    const stored = sId ? localStorage.getItem('ds-filter-' + sId) || '' : '';
+    const want = prev || stored;
+    sel2.innerHTML = opts;
+    if (validIds.has(want)) sel2.value = want;
+  }
+}
+
+// Persist the results-page dataset filter to localStorage so it survives
+// page reloads and re-renders. Called from the onchange handler; actual
+// rerun kicked off by searchRerun().
+function onResultsDatasetChange() {
+  const sel = document.getElementById('search-dataset-results');
+  if (sel && sId) localStorage.setItem('ds-filter-' + sId, sel.value || '');
+  searchRerun();
 }
 
 function searchNewFlow() {
