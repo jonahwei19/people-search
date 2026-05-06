@@ -1,9 +1,57 @@
 """GET /api/search/searches/:id/results — Get scored results for a search."""
 
+import re
 from http.server import BaseHTTPRequestHandler
 
 from api._helpers import require_auth, json_response, path_param, get_storage
 from api.search._search_helpers import get_v2_profiles
+
+
+_URL_RE = re.compile(r"(?:https?://|www\.)[^\s,;|<>\"'\\]+", re.IGNORECASE)
+_TRAILING_PUNCT = ".,;:)]}>\""
+
+# Hosts that are noise as "personal links" — don't surface as badges.
+_SKIP_HOSTS = {
+    "google.com", "docs.google.com", "drive.google.com",
+    "youtube.com", "youtu.be",
+    "facebook.com", "instagram.com",
+    "wikipedia.org",
+}
+
+
+def _harvest_urls(profile, primary_linkedin: str) -> list[str]:
+    """Pull distinct URLs out of identity + content fields. Caps at 8."""
+    out: list[str] = []
+    seen: set[str] = set()
+
+    def push(u: str) -> None:
+        if not u:
+            return
+        u = u.strip().rstrip(_TRAILING_PUNCT)
+        if not u:
+            return
+        if not u.lower().startswith("http"):
+            u = "https://" + u.lstrip("/")
+        key = u.lower()
+        if key in seen:
+            return
+        seen.add(key)
+        host = re.sub(r"^https?://(?:www\.)?", "", u, flags=re.I).split("/", 1)[0].lower()
+        if host in _SKIP_HOSTS:
+            return
+        out.append(u)
+
+    push(primary_linkedin)
+    if profile and getattr(profile, "fields", None):
+        for fname, fval in profile.fields.items():
+            value = getattr(fval, "value", None) or (fval.get("value") if isinstance(fval, dict) else "")
+            if not value:
+                continue
+            for m in _URL_RE.finditer(str(value)):
+                push(m.group(0))
+                if len(out) >= 8:
+                    return out
+    return out
 
 
 class handler(BaseHTTPRequestHandler):
@@ -51,6 +99,7 @@ class handler(BaseHTTPRequestHandler):
                 "raw_text_preview": (p.raw_text[:400] if p else ""),
                 "linkedin_url": (p.identity.linkedin_url if p else ""),
                 "email": (p.identity.email if p else ""),
+                "extra_links": _harvest_urls(p, p.identity.linkedin_url if p else "") if p else [],
             }
             if person_id:
                 person_seen[person_id] = len(results)
