@@ -232,7 +232,7 @@ class SupabaseStorage:
         if include_scores:
             select = "*"
         else:
-            select = "id, name, query, clarification_context, created_at, search_rules, exemplars, applicable_global_rule_ids, excluded_profile_ids, prompt_corrections, cache_prompt_hash"
+            select = "id, name, query, clarification_context, created_at, archived_at, search_rules, exemplars, applicable_global_rule_ids, excluded_profile_ids, prompt_corrections, cache_prompt_hash"
         response = (
             self.client.table("searches")
             .select(select)
@@ -249,15 +249,21 @@ class SupabaseStorage:
         feedback = self.get_feedback(search_id)
         return self._row_to_search(row, feedback)
 
-    def list_searches(self) -> list[dict]:
-        """List all searches for the account."""
-        response = (
+    def list_searches(self, include_archived: bool = False) -> list[dict]:
+        """List searches for the account.
+
+        By default, archived searches are hidden. Pass include_archived=True
+        to include them (the rendered list still gets `archived: true` so the
+        UI can toggle their visibility / show them in a separate section).
+        """
+        query = (
             self.client.table("searches")
-            .select("id, name, query, search_rules, cache_scores, created_at")
+            .select("id, name, query, search_rules, cache_scores, created_at, archived_at")
             .eq("account_id", self.account_id)
-            .order("created_at", desc=True)
-            .execute()
         )
+        if not include_archived:
+            query = query.is_("archived_at", "null")
+        response = query.order("created_at", desc=True).execute()
 
         # Single RPC call for all feedback counts
         counts_resp = self.client.rpc(
@@ -279,6 +285,8 @@ class SupabaseStorage:
                 "rule_count": len(pj(row.get("search_rules"), [])),
                 "search_rules": pj(row.get("search_rules"), []),
                 "has_results": bool(pj(row.get("cache_scores"), {})),
+                "archived": bool(row.get("archived_at")),
+                "archived_at": row.get("archived_at"),
             }
             for row in response.data
         ]
@@ -511,6 +519,11 @@ class SupabaseStorage:
             "applicable_global_rule_ids": search.applicable_global_rule_ids,
             "excluded_profile_ids": search.excluded_profile_ids,
             "prompt_corrections": search.prompt_corrections,
+            "archived_at": (
+                search.archived_at.isoformat()
+                if isinstance(search.archived_at, datetime)
+                else None
+            ),
             "created_at": (
                 search.created_at.isoformat()
                 if isinstance(search.created_at, datetime)
@@ -542,6 +555,7 @@ class SupabaseStorage:
             applicable_global_rule_ids=pj(row.get("applicable_global_rule_ids"), []),
             excluded_profile_ids=pj(row.get("excluded_profile_ids"), []),
             prompt_corrections=pj(row.get("prompt_corrections"), []),
+            archived_at=row.get("archived_at"),
         )
 
     def _feedback_to_row(self, search_id: str, event: FeedbackEvent) -> dict:

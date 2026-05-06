@@ -135,6 +135,8 @@ class DefinedSearch(BaseModel):
     # Format: ["CORRECTION: When you see X, do Y instead of Z", ...]
     prompt_corrections: list[str] = Field(default_factory=list)
 
+    archived_at: Optional[datetime] = None
+
     def compute_prompt_hash(self, global_rules: list[GlobalRule]) -> str:
         """Hash of everything that affects scoring — used for cache invalidation."""
         relevant_globals = [r.text for r in global_rules if r.id in self.applicable_global_rule_ids]

@@ -108,8 +108,11 @@ CREATE TABLE searches (
   applicable_global_rule_ids JSONB DEFAULT '[]'::jsonb,
   excluded_profile_ids JSONB DEFAULT '[]'::jsonb,
   prompt_corrections JSONB DEFAULT '[]'::jsonb,
+  archived_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ DEFAULT now()
 );
+
+CREATE INDEX idx_searches_archived_at ON searches(archived_at);
 
 -- ── Feedback ────────────────────────────────────────────────
 
