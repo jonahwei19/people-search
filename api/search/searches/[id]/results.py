@@ -99,11 +99,23 @@ class handler(BaseHTTPRequestHandler):
                 "raw_text_preview": (p.raw_text[:400] if p else ""),
                 "linkedin_url": (p.identity.linkedin_url if p else ""),
                 "email": (p.identity.email if p else ""),
-                "extra_links": _harvest_urls(p, p.identity.linkedin_url if p else "") if p else [],
+                # extra_links populated below for the visible top-N only.
+                "extra_links": [],
+                "_profile": p,
             }
             if person_id:
                 person_seen[person_id] = len(results)
             results.append(row)
+
+        # URL harvesting is the slow path (regex over every field of every
+        # profile). The frontend only renders the top 50, so harvest just
+        # those — saves seconds on accounts with thousands of scored rows.
+        for row in results[:50]:
+            p = row.pop("_profile", None)
+            if p is not None:
+                row["extra_links"] = _harvest_urls(p, row.get("linkedin_url", ""))
+        for row in results[50:]:
+            row.pop("_profile", None)
 
         json_response(self, 200, {
             "results": results,

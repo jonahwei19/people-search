@@ -465,11 +465,12 @@ window.APP_MODE = '{{APP_MODE}}';
       <div id="search-new" style="display:none;">
         <div class="card" style="margin-bottom:12px;">
           <div class="card-header">New Search</div>
+          <label for="search-dataset" style="display:block;font-size:12px;color:var(--text2);margin-bottom:4px;">Search within</label>
+          <select id="search-dataset" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;font-size:14px;margin-bottom:10px;background:var(--card);" onchange="rememberSearchDataset(this.value)">
+            <option value="">All datasets</option>
+          </select>
           <input type="text" id="search-name" placeholder="Name this search (e.g. BlueDot Head of Talent)" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;font-size:14px;margin-bottom:8px;">
-          <div style="display:flex;gap:8px;align-items:center;">
-            <select id="search-dataset" style="padding:8px;border:1px solid var(--border);border-radius:6px;font-size:13px;"><option value="">All datasets</option></select>
-            <button class="btn" onclick="searchBackToPicker()">Cancel</button>
-          </div>
+          <button class="btn" onclick="searchBackToPicker()">Cancel</button>
         </div>
 
         <!-- Chat interface -->
@@ -1755,6 +1756,10 @@ async function searchToggleArchive(id, archive) {
   loadSearchList();
 }
 
+function rememberSearchDataset(id) {
+  try { localStorage.setItem('last-search-dataset', id || ''); } catch (_) {}
+}
+
 async function loadSearchDatasets() {
   const {datasets} = await (await apiFetch('/api/search/datasets')).json();
   const opts = '<option value="">All datasets</option>' + datasets.map(d => `<option value="${d.id}">${d.name} (${d.profiles})</option>`).join('');
@@ -1763,7 +1768,15 @@ async function loadSearchDatasets() {
   if (sel) {
     const prev = sel.value;
     sel.innerHTML = opts;
-    if (validIds.has(prev)) sel.value = prev;
+    // Priority: current selection → last-used (localStorage) → biggest dataset.
+    const stored = (function(){ try { return localStorage.getItem('last-search-dataset') || ''; } catch (_) { return ''; } })();
+    let want = prev || stored;
+    if (!validIds.has(want)) want = '';
+    if (!want && datasets.length) {
+      const biggest = datasets.slice().sort((a, b) => (b.profiles || 0) - (a.profiles || 0))[0];
+      if (biggest && biggest.id) want = biggest.id;
+    }
+    sel.value = want;
   }
   const sel2 = document.getElementById('search-dataset-results');
   if (sel2) {
@@ -1903,28 +1916,57 @@ function pollSearchProgress(id) {
   }, 800);
 }
 
-async function searchShowResults(id, sd) {
-  loadSearchDatasets();  // ensure dataset selector is populated
-  const resultsData = await (await apiFetch(`/api/search/searches/${id}/results`)).json();
-  const results = resultsData.results;
-  const excludedCount = resultsData.excluded_count || 0;
-  // Get rules + name — try results response, then detail endpoint, then list cache
-  if (!sd) sd = await (await apiFetch(`/api/search/searches/${id}`)).json();
-  var listData = (window._searchListData || {})[id] || {};
-  var rules = resultsData.search_rules || sd.search_rules || listData.search_rules || [];
-  var searchName = resultsData.name || sd.name || listData.name || 'Search';
-  var feedbackCount = resultsData.feedback_count != null ? resultsData.feedback_count : (sd.feedback_log?.length || listData.feedback_count || 0);
+function _skeletonRows(n) {
+  let html = '';
+  for (let i = 0; i < n; i++) {
+    html += `<div class="card" style="padding:14px;opacity:0.45;">
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <div style="background:var(--border);height:14px;width:42%;border-radius:3px;"></div>
+        <div style="background:var(--border);height:22px;width:34px;border-radius:3px;"></div>
+      </div>
+      <div style="background:var(--border);height:10px;width:80%;border-radius:3px;margin-top:10px;"></div>
+      <div style="background:var(--border);height:10px;width:60%;border-radius:3px;margin-top:6px;"></div>
+    </div>`;
+  }
+  return html;
+}
 
-  var queryPanel = document.getElementById('search-query-panel');
-  var queryInput = document.getElementById('search-query-edit');
-  queryPanel.style.display = 'block';
-  queryInput.value = sd.query || listData.query || '';
+async function searchShowResults(id, sd) {
+  // 1) Paint the shell from cached metadata so the page is interactive
+  //    immediately. sd is the lightweight detail; listData is the
+  //    search-list cache. Either is enough for the header.
+  const listData = (window._searchListData || {})[id] || {};
+  const initialRules = ja((sd && sd.search_rules) || listData.search_rules || []);
+  const initialName = (sd && sd.name) || listData.name || 'Search';
+  const initialFeedback = sd && sd.feedback_log ? sd.feedback_log.length : (listData.feedback_count || 0);
+  const initialQuery = (sd && sd.query) || listData.query || '';
+
+  document.getElementById('search-query-panel').style.display = 'block';
+  document.getElementById('search-query-edit').value = initialQuery;
 
   const rp = document.getElementById('search-rules-panel');
-  window._searchRules = ja(rules);
+  window._searchRules = initialRules;
   rp.style.display = 'block';
-  rp.querySelector('.card-header').textContent = 'Search Rules (' + window._searchRules.length + ')';
+  rp.querySelector('.card-header').textContent = 'Search Rules (' + initialRules.length + ')';
   renderSearchRules();
+
+  document.getElementById('search-results-header').innerHTML = `<span id="search-name-display" style="font-weight:600;cursor:pointer;" onclick="searchEditName()" title="Click to rename">${initialName} <span style="font-size:11px;opacity:0.5;">&#9998;</span></span><span style="color:var(--text3);"> — loading results...</span>`;
+  document.getElementById('search-results-list').innerHTML = _skeletonRows(5);
+  sShow('results');
+
+  // 2) Fire datasets + results in parallel; page is already on screen.
+  loadSearchDatasets();
+  const resultsData = await (await apiFetch(`/api/search/searches/${id}/results`)).json();
+  const results = resultsData.results || [];
+  const excludedCount = resultsData.excluded_count || 0;
+  const feedbackCount = resultsData.feedback_count != null ? resultsData.feedback_count : initialFeedback;
+  const searchName = resultsData.name || initialName;
+  const serverRules = ja(resultsData.search_rules);
+  if (serverRules.length !== initialRules.length) {
+    window._searchRules = serverRules;
+    rp.querySelector('.card-header').textContent = 'Search Rules (' + serverRules.length + ')';
+    renderSearchRules();
+  }
 
   window._lastSearchResults = results;
   window._lastSearchName = searchName;
@@ -1949,7 +1991,6 @@ async function searchShowResults(id, sd) {
   if (excludedCount > 0) {
     document.getElementById('search-results-list').innerHTML += '<div style="text-align:center;padding:12px;font-size:12px;color:var(--text3);cursor:pointer;" onclick="sShowExcluded()">' + excludedCount + ' hidden profile' + (excludedCount>1?'s':'') + ' - click to show</div>';
   }
-  sShow('results');
 }
 
 async function sRate(pid, pname, rating, btn) {
