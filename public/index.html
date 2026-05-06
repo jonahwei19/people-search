@@ -256,6 +256,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans
 window.APP_MODE = 'cloud';
 </script>
 <button id="theme-toggle" style="position:fixed;top:12px;right:16px;background:var(--card);border:1px solid var(--border);border-radius:8px;padding:6px 10px;cursor:pointer;font-size:12px;font-weight:500;color:var(--text2);z-index:9999;box-shadow:var(--shadow);">Dark</button>
+<div id="app-version" title="4dde089 · 2026-05-06 — Surface non-LinkedIn URLs from profile fields in search results" style="position:fixed;bottom:10px;left:12px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;color:var(--text3);opacity:0.7;z-index:9999;pointer-events:none;user-select:none;">4dde089 · 2026-05-06</div>
 
 <!-- ═══ LOGIN PAGE ═══ -->
 <div id="login-page" class="login-page">
@@ -421,8 +422,16 @@ window.APP_MODE = 'cloud';
       <!-- Step 0: Search picker + global rules -->
       <div id="search-picker">
         <div class="card">
-          <div class="card-header">Your Searches</div>
-          <div class="card-sub">Pick an existing search or create a new one.</div>
+          <div style="display:flex;justify-content:space-between;align-items:baseline;">
+            <div>
+              <div class="card-header">Your Searches</div>
+              <div class="card-sub">Pick an existing search or create a new one.</div>
+            </div>
+            <label style="font-size:12px;color:var(--text3);cursor:pointer;user-select:none;">
+              <input type="checkbox" id="search-show-archived" onchange="loadSearchList()" style="vertical-align:middle;margin-right:4px;">
+              Show archived
+            </label>
+          </div>
           <div id="search-list"></div>
           <div style="display:flex;gap:8px;margin-top:8px;">
             <button class="btn primary" onclick="searchNewFlow()">+ Create New Search</button>
@@ -774,6 +783,71 @@ async function checkSession() {
 // Helper: Supabase returns JSONB columns as strings. Parse if needed.
 function jp(v) { if (typeof v === 'string') { try { return JSON.parse(v); } catch(e) {} } return v || {}; }
 function ja(v) { if (typeof v === 'string') { try { return JSON.parse(v); } catch(e) {} } return v || []; }
+
+// Split a multi-URL string into individual URLs and normalize each.
+// Handles: whitespace/comma/semicolon/pipe separators, encoded spaces,
+// stray leading slashes, and duplicated LinkedIn slugs.
+function splitUrls(v) {
+  if (!v) return [];
+  const raw = String(v)
+    .replace(/%20/gi, ' ')
+    .replace(/^\/+/, '')
+    .split(/[\s,;|]+/);
+  const out = [];
+  for (let s of raw) {
+    s = s && s.trim();
+    if (!s) continue;
+    if (!/^[a-z][a-z0-9+.\-]*:/i.test(s)) {
+      s = s.startsWith('//') ? 'https:' + s : 'https://' + s.replace(/^\/+/, '');
+    }
+    s = s.replace(/(\/in\/)([\w\-]{5,}?)\2+(?=\/|\?|#|$)/i, '$1$2');
+    out.push(s);
+  }
+  return out;
+}
+
+// First normalized URL from a (possibly multi-URL) field, or '' if none.
+function absUrl(u) {
+  return splitUrls(u)[0] || '';
+}
+
+// Classify a URL into a known link type. Returns one of:
+// 'linkedin' | 'x' | 'github' | 'web' (default).
+function classifyUrl(u) {
+  if (!u) return 'web';
+  let host = '';
+  try { host = new URL(u).hostname.toLowerCase().replace(/^www\./, ''); } catch (_) { return 'web'; }
+  if (host.endsWith('linkedin.com')) return 'linkedin';
+  if (host === 'x.com' || host === 'twitter.com') return 'x';
+  if (host === 'github.com') return 'github';
+  return 'web';
+}
+
+// Render small inline link badges for a profile-like object. Walks every
+// URL-bearing field, splits multi-URLs, dedupes, and shows one badge per
+// destination so a single field stuffed with "x.com/foo, mattmazur.com"
+// still surfaces both links.
+function profileLinkBadges(p) {
+  const seen = new Set();
+  const items = [];
+  const fields = [p && p.linkedin_url, p && p.twitter_url, p && p.website_url, p && p.resume_url];
+  const others = ja(p && p.other_links).concat(ja(p && p.extra_links));
+  for (const f of fields.concat(others)) {
+    for (const url of splitUrls(f)) {
+      if (seen.has(url)) continue;
+      seen.add(url);
+      const kind = classifyUrl(url);
+      let label, color;
+      if (kind === 'linkedin') { label = 'in'; color = 'var(--accent)'; }
+      else if (kind === 'x')   { label = '\u{1D54F}'; color = 'var(--text2)'; }
+      else if (kind === 'github') { label = 'gh'; color = 'var(--text2)'; }
+      else                     { label = 'site'; color = 'var(--text2)'; }
+      const title = url.replace(/"/g, '&quot;');
+      items.push(`<a href="${url}" target="_blank" rel="noopener" title="${title}" style="display:inline-block;font-size:11px;padding:1px 6px;margin-left:4px;border:1px solid var(--border);border-radius:3px;color:${color};text-decoration:none;">${label}</a>`);
+    }
+  }
+  return items.join('');
+}
 
 // ── State ──
 let file = null, mappings = null, datasetId = null;
@@ -1222,11 +1296,11 @@ function showProfile(idx) {
   if (p._dataset_name) html += `<div style="font-size:11px;color:var(--text3);margin-bottom:4px;">From: ${p._dataset_name}</div>`;
   const links = [];
   if (p.email) links.push(p.email);
-  if (p.linkedin_url) links.push('<a href="'+p.linkedin_url+'" target="_blank">LinkedIn</a>');
-  if (p.twitter_url) links.push('<a href="'+p.twitter_url+'" target="_blank">Twitter/X</a>');
-  if (p.website_url) links.push('<a href="'+p.website_url+'" target="_blank">Website</a>');
-  if (p.resume_url) links.push('<a href="'+p.resume_url+'" target="_blank">Resume</a>');
-  if (ja(p.other_links).length) ja(p.other_links).forEach(l => links.push('<a href="'+l+'" target="_blank">Link</a>'));
+  if (p.linkedin_url) links.push('<a href="'+absUrl(p.linkedin_url)+'" target="_blank">LinkedIn</a>');
+  if (p.twitter_url) links.push('<a href="'+absUrl(p.twitter_url)+'" target="_blank">Twitter/X</a>');
+  if (p.website_url) links.push('<a href="'+absUrl(p.website_url)+'" target="_blank">Website</a>');
+  if (p.resume_url) links.push('<a href="'+absUrl(p.resume_url)+'" target="_blank">Resume</a>');
+  if (ja(p.other_links).length) ja(p.other_links).forEach(l => links.push('<a href="'+absUrl(l)+'" target="_blank">Link</a>'));
   html += `<div class="subtitle">${[p.title, p.organization].filter(Boolean).join(' at ')}${links.length ? ' &middot; ' + links.join(' &middot; ') : ''}</div>`;
 
   const li = jp(p.linkedin_enriched);
@@ -1277,7 +1351,7 @@ function showProfile(idx) {
   html += '<div class="modal-section" style="border-top:1px solid var(--border);padding-top:12px;margin-top:12px;">';
   if (p.linkedin_url) {
     html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">' +
-      '<span style="font-size:12px;color:var(--text2);">LinkedIn: <a href="' + p.linkedin_url + '" target="_blank">' + (p.linkedin_url.split('/in/')[1] || p.linkedin_url) + '</a></span>' +
+      '<span style="font-size:12px;color:var(--text2);">LinkedIn: <a href="' + absUrl(p.linkedin_url) + '" target="_blank">' + (absUrl(p.linkedin_url).split('/in/')[1] || absUrl(p.linkedin_url)) + '</a></span>' +
       '<button class="btn btn-ghost" style="font-size:11px;color:var(--red);padding:2px 8px;" onclick="markWrongLinkedin(\'' + p.id + '\')">Wrong LinkedIn</button></div>';
   }
   html += '<div id="linkedin-edit-' + p.id + '" style="' + (p.linkedin_url ? 'display:none;' : '') + '">' +
@@ -1647,17 +1721,38 @@ function sShow(step) {
 }
 
 async function loadSearchList() {
-  const {searches} = await (await apiFetch('/api/search/searches')).json();
+  const showArchived = !!document.getElementById('search-show-archived')?.checked;
+  const url = '/api/search/searches' + (showArchived ? '?include_archived=1' : '');
+  const {searches} = await (await apiFetch(url)).json();
   window._searchListData = {};
   searches.forEach(s => window._searchListData[s.id] = s);
   const el = document.getElementById('search-list');
   if (!searches.length) { el.innerHTML = '<div style="color:var(--text3);font-size:13px;padding:8px 0;">No saved searches yet.</div>'; return; }
-  el.innerHTML = searches.map(s => `
-    <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 12px;border:1px solid var(--border);border-radius:8px;margin-bottom:6px;cursor:pointer;background:var(--card);" onclick="searchLoad('${s.id}', ${!!s.has_results})">
-      <div><div style="font-weight:600;font-size:14px;">${s.name}</div>
+  el.innerHTML = searches.map(s => {
+    const archived = !!s.archived;
+    const archiveLabel = archived ? 'unarchive' : 'archive';
+    const dim = archived ? 'opacity:0.55;' : '';
+    const archivedTag = archived ? ' <span style="font-size:10px;color:var(--text3);border:1px solid var(--border);padding:1px 5px;border-radius:3px;margin-left:6px;">archived</span>' : '';
+    return `
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 12px;border:1px solid var(--border);border-radius:8px;margin-bottom:6px;cursor:pointer;background:var(--card);${dim}" onclick="searchLoad('${s.id}', ${!!s.has_results})">
+      <div><div style="font-weight:600;font-size:14px;">${s.name}${archivedTag}</div>
       <div style="font-size:12px;color:var(--text3);">${s.query.substring(0,80)}${s.query.length>80?'...':''}</div></div>
-      <div style="text-align:right;font-size:11px;color:var(--text3);">${s.feedback_count} feedback<br>${s.rule_count} rules${s.has_results?'<br><span style="color:var(--green);">has results</span>':''}<br><a href="#" onclick="event.stopPropagation();searchExport('${s.id}')" style="color:var(--accent);">export</a></div>
-    </div>`).join('');
+      <div style="text-align:right;font-size:11px;color:var(--text3);">${s.feedback_count} feedback<br>${s.rule_count} rules${s.has_results?'<br><span style="color:var(--green);">has results</span>':''}<br>
+        <a href="#" onclick="event.stopPropagation();searchExport('${s.id}')" style="color:var(--accent);">export</a>
+        &nbsp;&middot;&nbsp;
+        <a href="#" onclick="event.stopPropagation();searchToggleArchive('${s.id}', ${!archived})" style="color:var(--accent);">${archiveLabel}</a>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function searchToggleArchive(id, archive) {
+  await apiFetch(`/api/search/searches/${id}/archive`, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({archived: archive}),
+  });
+  loadSearchList();
 }
 
 async function loadSearchDatasets() {
@@ -1837,7 +1932,7 @@ async function searchShowResults(id, sd) {
   document.getElementById('search-results-list').innerHTML = results.slice(0,50).map((r,i) => `
     <div class="card" style="padding:14px;">
       <div style="display:flex;justify-content:space-between;align-items:center;">
-        <div><span style="font-weight:600;cursor:pointer;text-decoration:underline;text-decoration-color:var(--border);" onclick="showSearchProfile('${r.id}')">${i+1}. ${r.name}</span>${r.linkedin_url?` <a href="${r.linkedin_url}" target="_blank" style="font-size:11px;color:var(--accent);">LinkedIn</a>`:''}${r.email?` <a href="#" onclick="event.preventDefault();reachOut('${r.id}','${(r.name||'').replace(/'/g,"")}','${(r.email||'').replace(/'/g,"")}')" style="font-size:11px;color:var(--green);">Reach Out</a>`:''}</div>
+        <div><span style="font-weight:600;cursor:pointer;text-decoration:underline;text-decoration-color:var(--border);" onclick="showSearchProfile('${r.id}')">${i+1}. ${r.name}</span>${profileLinkBadges(r)}${r.email?` <a href="#" onclick="event.preventDefault();reachOut('${r.id}','${(r.name||'').replace(/'/g,"")}','${(r.email||'').replace(/'/g,"")}')" style="font-size:11px;color:var(--green);">Reach Out</a>`:''}</div>
         <span style="font-size:22px;font-weight:700;color:${r.score>=70?'var(--green)':r.score>=50?'var(--amber)':'var(--red)'};">${r.score}</span>
       </div>
       <div style="font-size:12px;color:var(--text2);font-style:italic;margin:6px 0;">${r.reasoning||''}</div>
