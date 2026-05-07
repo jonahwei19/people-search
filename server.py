@@ -251,6 +251,12 @@ class Router(BaseHTTPRequestHandler):
             self.send_error(405, f"{method[3:]} not implemented for {url_path}")
             return
 
+        # Temporarily reclass `self` so private helper methods defined on
+        # the handler class (e.g. enrich.py's _handle_enriching) resolve.
+        # Both classes subclass BaseHTTPRequestHandler — instance layout
+        # is compatible — so attribute access continues to work.
+        original_cls = self.__class__
+        self.__class__ = handler_cls
         try:
             fn(self)
         except Exception as exc:
@@ -259,6 +265,8 @@ class Router(BaseHTTPRequestHandler):
                 self.send_error(500, str(exc))
             except Exception:
                 pass
+        finally:
+            self.__class__ = original_cls
 
     def log_message(self, format: str, *args) -> None:  # quieter than default
         logger.info("%s - %s", self.address_string(), format % args)
