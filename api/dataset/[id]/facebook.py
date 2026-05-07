@@ -274,7 +274,7 @@ def _render(profiles, dataset_name, supabase_url):
             f'<div class="grid">{chr(10).join(_card(p, supabase_url) for p in confirmed)}</div>'
         )
     else:
-        confirmed_grid = '<div class="empty">No confirmed entries yet.</div>'
+        confirmed_grid = ""
 
     review_html = ""
     if review:
@@ -282,7 +282,6 @@ def _render(profiles, dataset_name, supabase_url):
         review_html = f"""
 <div class="ornament"><span>⁂</span></div>
 <section class="section">
-  <h2>Needs review <span class="count">{len(review):03d}</span></h2>
   <p class="hint">LinkedIn URL was matched by identity search rather than uploaded — verify before relying on it.</p>
   <div class="grid">{review_cards}</div>
 </section>"""

@@ -1463,6 +1463,7 @@ async function openFaceBook(id) {
   status('Caching LinkedIn photos. This can take a minute on first open — pre-existing datasets may also need to re-fetch the photo URL from EnrichLayer.');
 
   let totals = {cached: 0, enriched: 0, failed: 0, skipped: 0, no_url: 0};
+  let failReasons = {};
   for (let i = 0; i < 50; i++) {  // safety cap so we never loop forever
     let data;
     try {
@@ -1475,8 +1476,15 @@ async function openFaceBook(id) {
     } catch (e) { break; }
     if (!data || data.error) break;
     for (const k of Object.keys(totals)) totals[k] += (data[k] || 0);
+    for (const [k, v] of Object.entries(data.fail_reasons || {})) {
+      failReasons[k] = (failReasons[k] || 0) + v;
+    }
     status(`Cached ${totals.cached} photo${totals.cached===1?'':'s'} so far${totals.enriched?` (${totals.enriched} via EnrichLayer)`:''}…`);
     if (!data.batch_capped) break;
+  }
+  if (totals.failed > 0) {
+    const breakdown = Object.entries(failReasons).map(([k, v]) => `${k}: ${v}`).join(', ');
+    console.warn('[face-book]', totals.failed, 'profiles failed —', breakdown);
   }
 
   const url = apiUrl('/api/dataset/' + id + '/facebook');

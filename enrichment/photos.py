@@ -13,13 +13,22 @@ generates it. If you ever need stricter access, switch to signed URLs in
 from __future__ import annotations
 
 import os
-from typing import Optional
+import time
+from typing import Optional, Tuple
 
 import requests
 
 BUCKET = "facebook-photos"
-_USER_AGENT = "Mozilla/5.0 (people-search face-book builder)"
+# LinkedIn CDN sometimes 403s the default Python UA; a real-browser UA
+# is more reliable. EnrichLayer's CDN doesn't care.
+_USER_AGENT = (
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) "
+    "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15"
+)
 _REQUEST_TIMEOUT = 15
+# Reasons that mean "URL is dead, re-fetching from EnrichLayer would
+# probably get a different one." Caller uses these to decide retries.
+URL_DEAD_REASONS = {"download_403", "download_404", "download_410"}
 
 
 def _ext_for(url: str, content_type: str = "") -> str:
@@ -43,49 +52,82 @@ def cache_photo(
     photo_url: str,
     *,
     overwrite: bool = False,
-) -> Optional[str]:
-    """Download `photo_url` and upload to Supabase Storage. Return the storage path.
+) -> Tuple[Optional[str], str]:
+    """Download `photo_url` and upload to Supabase Storage.
 
-    Returns the path within the bucket (e.g. `<profile_id>.jpg`) on success,
-    None on any failure. Failures are silent — photo caching must NEVER block
-    enrichment or search; the face-book just shows initials for that profile.
+    Returns (path, reason). On success, path is the bucket-relative path
+    (e.g. `<profile_id>.jpg`) and reason is "". On failure, path is None
+    and reason is a short tag like "download_404", "download_timeout",
+    "upload_error", etc. — surfaced in build_photos stats so we can see
+    what's actually breaking.
+
+    Retries once on transient errors (timeout, 5xx, 429, connection error)
+    before giving up. Permanent failures (4xx other than 429) are not
+    retried — caller should refresh the URL via EnrichLayer and try again.
     """
-    if not photo_url or not profile_id:
-        return None
-    try:
-        resp = requests.get(
-            photo_url,
-            headers={"User-Agent": _USER_AGENT},
-            timeout=_REQUEST_TIMEOUT,
-        )
-        if resp.status_code != 200 or not resp.content:
-            return None
-        ext = _ext_for(photo_url, resp.headers.get("content-type", ""))
-        path = f"{profile_id}.{ext}"
-        # supabase-py storage upload — `upsert=true` so re-runs are idempotent.
-        file_options = {
-            "content-type": resp.headers.get("content-type", f"image/{ext}"),
-            "cache-control": "public, max-age=31536000, immutable",
-            "upsert": "true" if overwrite else "false",
-        }
+    if not photo_url:
+        return None, "no_url"
+    if not profile_id:
+        return None, "no_profile_id"
+
+    content: Optional[bytes] = None
+    content_type = ""
+    last_status: Optional[int] = None
+    last_error = ""
+
+    for attempt in range(2):
         try:
-            supabase_client.storage.from_(BUCKET).upload(
-                path=path,
-                file=resp.content,
-                file_options=file_options,
+            resp = requests.get(
+                photo_url,
+                headers={"User-Agent": _USER_AGENT, "Accept": "image/*"},
+                timeout=_REQUEST_TIMEOUT,
+                allow_redirects=True,
             )
-        except Exception as upload_err:
-            # If the file already exists and overwrite=False, treat as success
-            # — the cached photo is what we want.
-            msg = str(upload_err).lower()
-            if "duplicate" in msg or "already exists" in msg or "409" in msg:
-                return path
-            return None
-        return path
-    except requests.RequestException:
-        return None
-    except Exception:
-        return None
+            last_status = resp.status_code
+            if resp.status_code == 200 and resp.content and len(resp.content) >= 256:
+                content = resp.content
+                content_type = resp.headers.get("content-type", "") or ""
+                break
+            # Retry on rate limit + transient server errors.
+            if resp.status_code in (429, 500, 502, 503, 504) and attempt == 0:
+                time.sleep(0.6)
+                continue
+            return None, f"download_{resp.status_code}"
+        except requests.Timeout:
+            last_error = "timeout"
+            if attempt == 0:
+                continue
+            return None, "download_timeout"
+        except requests.RequestException as e:
+            last_error = type(e).__name__.lower()
+            if attempt == 0:
+                time.sleep(0.4)
+                continue
+            return None, f"download_error:{last_error}"
+
+    if content is None:
+        return None, f"download_{last_status or last_error or 'unknown'}"
+
+    ext = _ext_for(photo_url, content_type)
+    path = f"{profile_id}.{ext}"
+    file_options = {
+        "content-type": content_type or f"image/{ext}",
+        "cache-control": "public, max-age=31536000, immutable",
+        "upsert": "true" if overwrite else "false",
+    }
+    try:
+        supabase_client.storage.from_(BUCKET).upload(
+            path=path,
+            file=content,
+            file_options=file_options,
+        )
+    except Exception as upload_err:
+        msg = str(upload_err).lower()
+        # Treat "already there" as success — re-runs should be no-ops.
+        if "duplicate" in msg or "already exists" in msg or "409" in msg:
+            return path, ""
+        return None, f"upload_error:{msg[:60]}"
+    return path, ""
 
 
 def needs_caching(profile) -> Optional[str]:
