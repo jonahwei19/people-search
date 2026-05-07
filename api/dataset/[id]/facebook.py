@@ -90,13 +90,22 @@ def _card(p, supabase_url: str) -> str:
     # which clears or replaces the URL and re-caches the photo.
     fix_html = (
         f'<div class="fix" data-pid="{_html.escape(p.id)}">'
-        f'<button class="fix-toggle" type="button">Wrong photo / fix LinkedIn</button>'
+        f'<button class="fix-toggle" type="button">Wrong photo / fix</button>'
         f'<div class="fix-panel" hidden>'
-        f'  <input type="text" class="fix-input" placeholder="Paste correct LinkedIn URL" />'
+        f'  <label class="fix-label">Replace LinkedIn URL <span class="fix-hint">re-enriches + recaches photo</span></label>'
+        f'  <div class="fix-row">'
+        f'    <input type="text" class="fix-li-input" placeholder="https://www.linkedin.com/in/…" />'
+        f'    <button class="fix-li-save" type="button">Save</button>'
+        f'  </div>'
+        f'  <label class="fix-label">Or paste a photo URL <span class="fix-hint">any public image — org page, twitter, etc.</span></label>'
+        f'  <div class="fix-row">'
+        f'    <input type="text" class="fix-photo-input" placeholder="https://…/photo.jpg" />'
+        f'    <button class="fix-photo-save" type="button">Save</button>'
+        f'  </div>'
         f'  <div class="fix-actions">'
-        f'    <button class="fix-save" type="button">Save</button>'
-        f'    <button class="fix-clear" type="button" title="Clear LinkedIn — show initials">Clear</button>'
-        f'    <button class="fix-cancel" type="button">Cancel</button>'
+        f'    <button class="fix-clear" type="button" title="Clear LinkedIn + cached photo (shows initials)">Clear LinkedIn</button>'
+        f'    <button class="fix-clear-photo" type="button" title="Clear just the photo">Clear photo only</button>'
+        f'    <button class="fix-cancel" type="button">Close</button>'
         f'  </div>'
         f'  <div class="fix-status" aria-live="polite"></div>'
         f'</div></div>'
@@ -243,7 +252,7 @@ a.li:hover { text-decoration: underline; text-underline-offset: 2px; }
   font-size: 14px;
 }
 
-/* "Wrong photo / fix LinkedIn" per-card controls */
+/* "Wrong photo / fix" per-card controls */
 .fix { margin-top: 8px; }
 .fix-toggle {
   background: none; border: none; padding: 0;
@@ -252,18 +261,32 @@ a.li:hover { text-decoration: underline; text-underline-offset: 2px; }
 }
 .fix-toggle:hover { color: var(--text-2); text-decoration: underline; }
 .fix-panel {
-  margin-top: 6px; padding: 8px; background: var(--surface);
+  margin-top: 6px; padding: 10px; background: var(--surface);
   border: 1px solid var(--border); border-radius: 6px;
-  display: flex; flex-direction: column; gap: 6px;
+  display: flex; flex-direction: column; gap: 8px;
 }
-.fix-input {
+.fix-label {
+  font-family: var(--mono); font-size: 10px;
+  letter-spacing: 0.04em; text-transform: uppercase;
+  color: var(--text-2); display: flex; gap: 6px; align-items: baseline;
+}
+.fix-hint { font-size: 10px; color: var(--text-3); text-transform: none; letter-spacing: 0; }
+.fix-row { display: flex; gap: 6px; }
+.fix-row input {
   font: inherit; font-size: 12px;
   padding: 6px 8px; border: 1px solid var(--border-2);
   border-radius: 4px; outline: none;
-  width: 100%;
+  flex: 1; min-width: 0;
 }
-.fix-input:focus { border-color: var(--accent); }
-.fix-actions { display: flex; gap: 6px; }
+.fix-row input:focus { border-color: var(--accent); }
+.fix-row button {
+  font: inherit; font-size: 11px; cursor: pointer;
+  padding: 5px 10px; border-radius: 4px;
+  border: 1px solid var(--text); background: var(--text); color: white;
+  white-space: nowrap;
+}
+.fix-row button:hover { background: var(--accent); border-color: var(--accent); }
+.fix-actions { display: flex; gap: 6px; flex-wrap: wrap; padding-top: 4px; border-top: 1px solid var(--border); }
 .fix-actions button {
   font: inherit; font-size: 11px; cursor: pointer;
   padding: 5px 10px; border-radius: 4px;
@@ -271,11 +294,9 @@ a.li:hover { text-decoration: underline; text-underline-offset: 2px; }
   color: var(--text);
 }
 .fix-actions button:hover { background: var(--bg); }
-.fix-actions .fix-save { background: var(--text); color: white; border-color: var(--text); }
-.fix-actions .fix-save:hover { background: var(--accent); border-color: var(--accent); }
 .fix-actions .fix-clear { color: #b00020; border-color: #f3c4c8; }
 .fix-actions .fix-clear:hover { background: #fdebee; }
-.fix-actions button:disabled { opacity: 0.5; cursor: wait; }
+.fix-row button:disabled, .fix-actions button:disabled { opacity: 0.5; cursor: wait; }
 .fix-status {
   font-family: var(--mono); font-size: 11px; color: var(--text-3);
   min-height: 14px;
@@ -347,80 +368,99 @@ def _render(profiles, dataset_name, supabase_url):
     {missing_html}
   </main>
   <script>
-  // Per-card "Wrong / Fix" controls. Hits POST <relative>/profile/<id>/linkedin
-  // which clears (empty body) or replaces (with new URL) the LinkedIn URL,
-  // re-runs enrichment, and re-caches the photo via the same fallback chain
-  // that build_photos uses. On success we hot-swap the card content from the
-  // returned profile so the user sees the new photo without a full reload.
+  // Per-card "Wrong / Fix" controls. Four actions per card:
+  //   - LinkedIn save  → POST /api/profile/<id>/linkedin {{linkedin_url: "..."}}
+  //   - LinkedIn clear → POST /api/profile/<id>/linkedin {{linkedin_url: ""}}
+  //   - Photo save     → POST /api/profile/<id>/photo    {{photo_url: "..."}}
+  //   - Photo clear    → POST /api/profile/<id>/photo    {{clear: true}}
+  // On success: reload with cache-buster so the new photo lands.
   (function() {{
-    // Resolve the API base. Gallery is served at <base>/api/dataset/<id>/facebook,
-    // so two `..` segments take us back to <base>/api.
+    // Gallery is served at <base>/api/dataset/<id>/facebook,
+    // so two `..` from there land at <base>/api.
     const apiBase = new URL('../../', location.href).pathname.replace(/\\/$/, '');
-    const cards = document.querySelectorAll('.fix');
-    cards.forEach(function(box) {{
-      const pid = box.getAttribute('data-pid');
-      const toggle = box.querySelector('.fix-toggle');
-      const panel = box.querySelector('.fix-panel');
-      const input = box.querySelector('.fix-input');
-      const status = box.querySelector('.fix-status');
-      const saveBtn = box.querySelector('.fix-save');
-      const clearBtn = box.querySelector('.fix-clear');
-      const cancelBtn = box.querySelector('.fix-cancel');
-      const card = box.closest('.card');
+
+    document.querySelectorAll('.fix').forEach(function(box) {{
+      const pid       = box.getAttribute('data-pid');
+      const toggle    = box.querySelector('.fix-toggle');
+      const panel     = box.querySelector('.fix-panel');
+      const liInput   = box.querySelector('.fix-li-input');
+      const liSave    = box.querySelector('.fix-li-save');
+      const photoInput= box.querySelector('.fix-photo-input');
+      const photoSave = box.querySelector('.fix-photo-save');
+      const clearLi   = box.querySelector('.fix-clear');
+      const clearPhoto= box.querySelector('.fix-clear-photo');
+      const cancel    = box.querySelector('.fix-cancel');
+      const status    = box.querySelector('.fix-status');
+      const allButtons = [liSave, photoSave, clearLi, clearPhoto, cancel];
+      const allInputs  = [liInput, photoInput];
 
       function setStatus(text, kind) {{
         status.className = 'fix-status' + (kind ? ' ' + kind : '');
         status.textContent = text || '';
       }}
       function setBusy(b) {{
-        [saveBtn, clearBtn, cancelBtn, input].forEach(function(el) {{ el.disabled = !!b; }});
+        allButtons.forEach(function(el) {{ el.disabled = !!b; }});
+        allInputs.forEach(function(el) {{ el.disabled = !!b; }});
       }}
-      function show() {{ panel.hidden = false; input.focus(); }}
-      function hide() {{ panel.hidden = true; setStatus(''); }}
+      function reloadSoon() {{
+        setTimeout(function() {{
+          const u = new URL(location.href); u.searchParams.set('_', Date.now()); location.href = u.toString();
+        }}, 600);
+      }}
 
-      toggle.addEventListener('click', function() {{ panel.hidden ? show() : hide(); }});
-      cancelBtn.addEventListener('click', hide);
+      toggle.addEventListener('click', function() {{
+        if (panel.hidden) {{ panel.hidden = false; liInput.focus(); }}
+        else {{ panel.hidden = true; setStatus(''); }}
+      }});
+      cancel.addEventListener('click', function() {{ panel.hidden = true; setStatus(''); }});
 
-      async function submit(body, label) {{
+      async function send(endpoint, body, label, successMsg) {{
         setBusy(true); setStatus(label + '…');
         try {{
-          const resp = await fetch(apiBase + '/profile/' + pid + '/linkedin', {{
+          const resp = await fetch(apiBase + '/profile/' + pid + '/' + endpoint, {{
             method: 'POST',
             headers: {{ 'Content-Type': 'application/json' }},
             credentials: 'same-origin',
             body: JSON.stringify(body),
           }});
+          const text = await resp.text();
           if (!resp.ok) {{
-            const t = await resp.text();
-            throw new Error('HTTP ' + resp.status + ': ' + t.slice(0, 200));
+            let msg = 'HTTP ' + resp.status;
+            try {{ const j = JSON.parse(text); if (j.error) msg = j.error; }} catch(_) {{}}
+            throw new Error(msg);
           }}
-          const data = await resp.json();
-          setStatus(data.status === 'cleared' ? 'Cleared.' : 'Saved. Refreshing…', 'success');
-          // Easiest reliable refresh: reload the page so the new photo and
-          // role/employer are picked up server-side. Add a cache-buster so
-          // any newly-cached image isn't shadowed by the browser cache.
-          setTimeout(function() {{
-            const u = new URL(location.href); u.searchParams.set('_', Date.now()); location.href = u.toString();
-          }}, 600);
+          setStatus(successMsg, 'success');
+          reloadSoon();
         }} catch (err) {{
           setStatus('Failed: ' + err.message, 'error');
           setBusy(false);
         }}
       }}
 
-      saveBtn.addEventListener('click', function() {{
-        const url = input.value.trim();
+      liSave.addEventListener('click', function() {{
+        const url = liInput.value.trim();
         if (!url || url.indexOf('linkedin.com/in/') < 0) {{
-          setStatus('Paste a full https://www.linkedin.com/in/… URL.', 'error');
-          return;
+          setStatus('Paste a full https://www.linkedin.com/in/… URL.', 'error'); return;
         }}
-        submit({{ linkedin_url: url }}, 'Re-enriching');
+        send('linkedin', {{ linkedin_url: url }}, 'Re-enriching', 'Saved. Refreshing…');
       }});
-      clearBtn.addEventListener('click', function() {{
+      photoSave.addEventListener('click', function() {{
+        const url = photoInput.value.trim();
+        if (!/^https?:\\/\\//i.test(url)) {{
+          setStatus('Paste a full http(s) image URL.', 'error'); return;
+        }}
+        send('photo', {{ photo_url: url }}, 'Caching photo', 'Saved. Refreshing…');
+      }});
+      clearLi.addEventListener('click', function() {{
         if (!confirm('Clear LinkedIn for this person? The cached photo will be deleted.')) return;
-        submit({{ linkedin_url: '' }}, 'Clearing');
+        send('linkedin', {{ linkedin_url: '' }}, 'Clearing', 'Cleared. Refreshing…');
       }});
-      input.addEventListener('keydown', function(e) {{ if (e.key === 'Enter') saveBtn.click(); }});
+      clearPhoto.addEventListener('click', function() {{
+        if (!confirm('Clear just the cached photo? LinkedIn URL stays.')) return;
+        send('photo', {{ clear: true }}, 'Clearing photo', 'Cleared. Refreshing…');
+      }});
+      liInput.addEventListener('keydown', function(e) {{ if (e.key === 'Enter') liSave.click(); }});
+      photoInput.addEventListener('keydown', function(e) {{ if (e.key === 'Enter') photoSave.click(); }});
     }});
   }})();
   </script>
