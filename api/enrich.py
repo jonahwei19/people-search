@@ -205,6 +205,21 @@ class handler(BaseHTTPRequestHandler):
                 "current": 0, "total": total, "message": str(e),
             })
 
+    @staticmethod
+    def _merge_stats(storage, job_id, **delta):
+        """Read job.stats, add delta values, write back. Preserves keys we
+        don't touch (e.g. `phase`)."""
+        cur = (storage.get_job(job_id) or {}).get("stats") or {}
+        if not isinstance(cur, dict):
+            cur = {}
+        for k, v in delta.items():
+            if isinstance(v, (int, float)):
+                cur[k] = (cur.get(k) or 0) + v
+            else:
+                cur[k] = v
+        storage.update_job(job_id, stats=cur)
+        return cur
+
     # ── Phase 1: enrichment ──────────────────────────────────
 
     def _handle_enriching(self, storage, pipeline, dataset_id, aid, job_id, total):
@@ -222,10 +237,10 @@ class handler(BaseHTTPRequestHandler):
 
         if not pending:
             # Enrichment complete — advance to fetching phase.
+            self._merge_stats(storage, job_id, phase="fetching")
             storage.update_job(
                 job_id,
                 current_count=total,
-                stats={"phase": "fetching"},
                 message="Fetching links...",
             )
             json_response(self, 200, {
@@ -236,11 +251,12 @@ class handler(BaseHTTPRequestHandler):
 
         chunk = pending
 
-        # Resolve identities (email → LinkedIn URL) — 20 parallel workers
-        pipeline.resolver.resolve_batch(chunk, max_workers=20)
-
-        # Enrich LinkedIn profiles — 20 parallel workers
-        pipeline.enricher.enrich_batch(chunk, max_workers=20)
+        # Capture stats from each batch so the final "Done" screen can show
+        # actual numbers instead of zeros. Return values are dicts:
+        #   resolve_stats: {"resolved": N, "failed": N, ...}
+        #   enrich_stats:  {"enriched": N, "skipped": N, "failed": N, "total_cost": $}
+        resolve_stats = pipeline.resolver.resolve_batch(chunk, max_workers=20) or {}
+        enrich_stats = pipeline.enricher.enrich_batch(chunk, max_workers=20) or {}
 
         # Trim enrichment logs before saving (reduces I/O)
         for p in chunk:
@@ -253,6 +269,18 @@ class handler(BaseHTTPRequestHandler):
         # Count done via lightweight query
         still_pending = storage.client.table("profiles").select("id", count="exact").eq("dataset_id", dataset_id).eq("enrichment_status", "pending").execute()
         done_count = total - (still_pending.count or 0)
+
+        self._merge_stats(
+            storage,
+            job_id,
+            phase="enriching",
+            resolved=resolve_stats.get("resolved", 0),
+            resolve_failed=resolve_stats.get("failed", 0),
+            enriched=enrich_stats.get("enriched", 0),
+            skipped=enrich_stats.get("skipped", 0),
+            failed=enrich_stats.get("failed", 0),
+            total_cost=enrich_stats.get("total_cost", 0.0),
+        )
         storage.update_job(
             job_id,
             current_count=done_count,
@@ -276,10 +304,10 @@ class handler(BaseHTTPRequestHandler):
 
         if not chunk:
             # Nothing left to fetch — advance to card-building phase.
+            self._merge_stats(storage, job_id, phase="carding")
             storage.update_job(
                 job_id,
                 current_count=total,
-                stats={"phase": "carding"},
                 message="Building profile cards...",
             )
             json_response(self, 200, {
@@ -317,11 +345,28 @@ class handler(BaseHTTPRequestHandler):
         dataset = storage.load_dataset(dataset_id)
         pipeline.build_profile_cards(dataset)
         storage.save_profiles(dataset_id, dataset.profiles)
+
+        # Reconcile final counts from the database — chunked accumulation can
+        # under-count if a chunk's stats write raced or was retried. Cost stays
+        # as-accumulated since per-profile cost isn't persisted.
+        cur = (storage.get_job(job_id) or {}).get("stats") or {}
+        if not isinstance(cur, dict):
+            cur = {}
+        from enrichment.models import EnrichmentStatus
+        enriched_count = sum(1 for p in dataset.profiles if p.enrichment_status == EnrichmentStatus.ENRICHED)
+        skipped_count = sum(1 for p in dataset.profiles if p.enrichment_status == EnrichmentStatus.SKIPPED)
+        failed_count = sum(1 for p in dataset.profiles if p.enrichment_status == EnrichmentStatus.FAILED)
+        cur["enriched"] = enriched_count
+        cur["skipped"] = skipped_count
+        cur["failed"] = failed_count
+        cur["phase"] = "done"
+
         storage.update_job(
             job_id,
             status="done",
             current_count=total,
             message="Done",
+            stats=cur,
         )
         json_response(self, 200, {
             "job_id": job_id, "status": "done",
