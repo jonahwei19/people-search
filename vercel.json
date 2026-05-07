@@ -7,6 +7,6 @@
     }
   },
   "rewrites": [
-    { "source": "/", "destination": "/cloud/public/moved.html" }
+    { "source": "/", "destination": "/moved.html" }
   ]
 }
