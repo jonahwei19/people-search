@@ -1,0 +1,21 @@
+[Unit]
+Description=People Search — candidate search tool (Python ThreadingHTTPServer)
+After=network.target
+
+[Service]
+Type=simple
+User=ec2-user
+Group=ec2-user
+WorkingDirectory=/home/ec2-user/agents/people-search
+EnvironmentFile=/home/ec2-user/agents/people-search/.env
+Environment=PORT=8789
+Environment=BIND=127.0.0.1
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/home/ec2-user/agents/people-search/.venv/bin/python /home/ec2-user/agents/people-search/server.py
+Restart=always
+RestartSec=3
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
