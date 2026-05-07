@@ -64,6 +64,10 @@ class Profile:
     profile_card: str = ""
     field_summaries: dict[str, str] = field(default_factory=dict)
 
+    # Path within the `facebook-photos` Supabase Storage bucket. Empty until a
+    # photo has been cached. Populated by enrichment.photos.cache_photo().
+    photo_path: str = ""
+
     # Fetched link content (text pulled from Twitter, GitHub, websites, etc.)
     fetched_content: dict[str, str] = field(default_factory=dict)
 

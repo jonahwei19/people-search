@@ -256,7 +256,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans
 window.APP_MODE = 'cloud';
 </script>
 <button id="theme-toggle" style="position:fixed;top:12px;right:16px;background:var(--card);border:1px solid var(--border);border-radius:8px;padding:6px 10px;cursor:pointer;font-size:12px;font-weight:500;color:var(--text2);z-index:9999;box-shadow:var(--shadow);">Dark</button>
-<div id="app-version" title="9d17123 · 2026-05-06 — UI_ archive toggle_ link icon badges_ version stamp" style="position:fixed;bottom:10px;left:12px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;color:var(--text3);opacity:0.7;z-index:9999;pointer-events:none;user-select:none;">9d17123 · 2026-05-06</div>
+<div id="app-version" title="7d63c5b · 2026-05-06 — Faster search-click perceived load _ prominent dataset picker" style="position:fixed;bottom:10px;left:12px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;color:var(--text3);opacity:0.7;z-index:9999;pointer-events:none;user-select:none;">7d63c5b · 2026-05-06</div>
 
 <!-- ═══ LOGIN PAGE ═══ -->
 <div id="login-page" class="login-page">
@@ -1221,6 +1221,7 @@ async function loadDatasets() {
           <div class="ds-fields">${ja(d.searchable_fields).map(f=>'<span class="ds-field-tag">'+f+'</span>').join('')}</div>
         </div>
         <div class="ds-actions">
+          <button class="btn btn-ghost" style="font-size:12px;" onclick="event.stopPropagation();openFaceBook('${d.id}')" title="Open photo gallery (caches LinkedIn photos on first open)">Face book</button>
           <button class="btn btn-ghost" style="color:var(--red);font-size:12px;" onclick="event.stopPropagation();deleteDataset('${d.id}','${(d.name||'').replace(/'/g,"\\'")}')">Delete</button>
         </div>
       </div>
@@ -1411,6 +1412,25 @@ async function deleteDataset(id, name) {
   if (document.getElementById('page-ds-detail').classList.contains('active')) {
     showPage('datasets');
   }
+}
+
+// Open the face-book gallery for a dataset. We kick off the photo cache
+// in the background (POST build_photos) before opening the gallery in a
+// new tab so first-open shows photos without a wait. Subsequent runs are
+// idempotent — already-cached profiles are skipped server-side.
+async function openFaceBook(id) {
+  const tab = window.open('', '_blank');
+  if (tab) tab.document.write('<title>Building face book…</title><body style="font-family:system-ui;padding:24px;color:#333;">Caching LinkedIn photos for the first time… this may take 30–60s. Reload this tab when it finishes.</body>');
+  try {
+    await apiFetch('/api/dataset/' + id + '/build_photos', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: '{}',
+    });
+  } catch (e) { /* render endpoint will still work with whatever's cached */ }
+  const url = '/api/dataset/' + id + '/facebook';
+  if (tab && !tab.closed) tab.location.href = url;
+  else window.open(url, '_blank');
 }
 
 async function reenrichDataset(id) {

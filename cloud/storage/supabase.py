@@ -449,6 +449,11 @@ class SupabaseStorage:
         src = getattr(profile, "linkedin_url_source", "")
         if src:
             row["linkedin_url_source"] = src
+        # photo_path: added by cloud/migrations/008_photo_path.sql.
+        # Conditional write so pre-migration schemas don't reject the upsert.
+        photo = getattr(profile, "photo_path", "")
+        if photo:
+            row["photo_path"] = photo
         if dataset_id is not None:
             row["dataset_id"] = dataset_id
         return row
@@ -500,6 +505,7 @@ class SupabaseStorage:
             enriched_title=row.get("enriched_title") or "",
             person_id=row.get("person_id") or "",
             linkedin_url_source=row.get("linkedin_url_source") or "",
+            photo_path=row.get("photo_path") or "",
         )
 
     def _search_to_row(self, search: DefinedSearch) -> dict:

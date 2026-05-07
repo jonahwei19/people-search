@@ -974,5 +974,9 @@ class LinkedInEnricher:
             "summary": summary,
             "experience": experience,
             "education": education,
+            # Kept so the face-book / gallery view has an avatar source.
+            # LinkedIn CDN URLs expire (~30 days), so callers should cache
+            # to Supabase Storage via enrichment.photos.cache_photo().
+            "profile_pic_url": data.get("profile_pic_url", "") or "",
             "context_block": "\n".join(context_parts),
         }
