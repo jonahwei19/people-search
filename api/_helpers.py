@@ -1,4 +1,14 @@
-"""Shared helpers for Vercel API routes."""
+"""Shared helpers for the API routes (serves both Vercel and EC2 deploys).
+
+EC2 caveat: the process is shared across requests, so `os.environ` is
+process-wide. The env mutations below are guarded by `_keys_lock` to keep
+writes atomic, but reads from sub-modules (e.g. `os.environ.get('BRAVE_API_KEY')`
+in identity/enrichment code) are NOT thread-isolated. Concurrent requests
+for *different accounts* would see each other's keys mid-flight. Single-
+account usage (Jonah's case today) is safe because all writes are
+idempotent. Multi-tenant correctness needs proper per-request key
+isolation (contextvars + threaded propagation) — see MIGRATION.md.
+"""
 
 from __future__ import annotations
 
@@ -6,6 +16,7 @@ import cgi
 import json
 import os
 import sys
+import threading
 import uuid
 from pathlib import Path
 
@@ -25,6 +36,9 @@ from cloud.storage.supabase import SupabaseStorage
 from enrichment.pipeline import EnrichmentPipeline
 
 
+_keys_lock = threading.Lock()
+
+
 def get_storage(account_id: str) -> SupabaseStorage:
     """Create a SupabaseStorage instance for the given account."""
     storage = SupabaseStorage(
@@ -32,12 +46,15 @@ def get_storage(account_id: str) -> SupabaseStorage:
         supabase_key=os.environ["SUPABASE_SERVICE_KEY"],
         account_id=account_id,
     )
-    # Load account API keys into environment so Gemini/search modules can find them
+    # Load account API keys into environment so Gemini/search modules can find them.
+    # The lock makes the bulk write atomic so a concurrent request can't read a
+    # half-updated env. It does NOT prevent cross-account leak (see module docstring).
     client = get_supabase_client()
     keys = get_account_keys(client, account_id)
-    for k, v in keys.items():
-        if v:
-            os.environ[k] = v
+    with _keys_lock:
+        for k, v in keys.items():
+            if v:
+                os.environ[k] = v
     return storage
 
 
@@ -58,10 +75,12 @@ def get_pipeline(account_id: str) -> EnrichmentPipeline:
         if not keys.get(k):
             keys[k] = os.environ.get(k, "")
 
-    # Set API keys in environment for sub-modules that read os.environ
-    for k, v in keys.items():
-        if v:
-            os.environ[k] = v
+    # Set API keys in environment for sub-modules that read os.environ.
+    # See module docstring for the cross-account caveat under EC2.
+    with _keys_lock:
+        for k, v in keys.items():
+            if v:
+                os.environ[k] = v
 
     return EnrichmentPipeline(
         data_dir="/tmp/ps-datasets",

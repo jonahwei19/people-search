@@ -142,6 +142,30 @@ until the previous one passes.
   offline but no other service is affected.
 - systemd can stop people-search without affecting other services.
 
+## Known limitations under EC2's persistent process
+
+These don't affect the single-account user (Jonah) today, but should be
+fixed before adding a second account / multi-tenant access:
+
+- **`os.environ` is process-wide.** `api/_helpers.get_storage` and
+  `get_pipeline` write per-account API keys into the environment so
+  downstream modules (`enrichment.identity`, `search.gemini_helpers`,
+  `enrichment.summarizer`, etc.) can find them. On Vercel each request
+  was its own process; on EC2 these writes are visible to every other
+  request. The bulk write is locked (`_keys_lock` in `_helpers.py`) so
+  partial-state reads can't happen, but a concurrent request from a
+  *different* account would still see the wrong key mid-flight. Proper
+  fix: thread keys through call chains explicitly (constructors already
+  accept them in `LinkedInEnricher`, `IdentityResolver`) or use
+  `contextvars` + `copy_context()` for ThreadPoolExecutor workers.
+- **`api/search/chat.py` `CONVERSATIONS`** is an in-process dict.
+  Lock-protected as of the EC2 cutover; survives process restarts is
+  *not* guaranteed (active question chains lose state on restart).
+  Acceptable because the chain is short (~3 turns during search
+  creation). Move to a Supabase-backed table if it becomes load-bearing.
+- **Photo cache eager hook still pending.** Backfill on first open
+  works; documented in MIGRATION.md follow-ups.
+
 ## Open questions
 
 - Long-running enrichment: keep chunked-and-polled for now (works
