@@ -86,6 +86,21 @@ def _card(p, supabase_url: str) -> str:
         f'target="_blank" rel="noopener">LinkedIn <span aria-hidden="true">↗</span></a>'
         if p.linkedin_url else ""
     )
+    # Per-card "Wrong / Fix" controls. Hits POST /api/profile/<id>/linkedin
+    # which clears or replaces the URL and re-caches the photo.
+    fix_html = (
+        f'<div class="fix" data-pid="{_html.escape(p.id)}">'
+        f'<button class="fix-toggle" type="button">Wrong photo / fix LinkedIn</button>'
+        f'<div class="fix-panel" hidden>'
+        f'  <input type="text" class="fix-input" placeholder="Paste correct LinkedIn URL" />'
+        f'  <div class="fix-actions">'
+        f'    <button class="fix-save" type="button">Save</button>'
+        f'    <button class="fix-clear" type="button" title="Clear LinkedIn — show initials">Clear</button>'
+        f'    <button class="fix-cancel" type="button">Cancel</button>'
+        f'  </div>'
+        f'  <div class="fix-status" aria-live="polite"></div>'
+        f'</div></div>'
+    )
 
     return f"""
     <article class="card">
@@ -97,6 +112,7 @@ def _card(p, supabase_url: str) -> str:
         {role_html}
         {location_html}
         {link_html}
+        {fix_html}
       </div>
     </article>"""
 
@@ -227,11 +243,52 @@ a.li:hover { text-decoration: underline; text-underline-offset: 2px; }
   font-size: 14px;
 }
 
+/* "Wrong photo / fix LinkedIn" per-card controls */
+.fix { margin-top: 8px; }
+.fix-toggle {
+  background: none; border: none; padding: 0;
+  font-family: var(--mono); font-size: 11px;
+  color: var(--text-3); cursor: pointer;
+}
+.fix-toggle:hover { color: var(--text-2); text-decoration: underline; }
+.fix-panel {
+  margin-top: 6px; padding: 8px; background: var(--surface);
+  border: 1px solid var(--border); border-radius: 6px;
+  display: flex; flex-direction: column; gap: 6px;
+}
+.fix-input {
+  font: inherit; font-size: 12px;
+  padding: 6px 8px; border: 1px solid var(--border-2);
+  border-radius: 4px; outline: none;
+  width: 100%;
+}
+.fix-input:focus { border-color: var(--accent); }
+.fix-actions { display: flex; gap: 6px; }
+.fix-actions button {
+  font: inherit; font-size: 11px; cursor: pointer;
+  padding: 5px 10px; border-radius: 4px;
+  border: 1px solid var(--border-2); background: var(--surface);
+  color: var(--text);
+}
+.fix-actions button:hover { background: var(--bg); }
+.fix-actions .fix-save { background: var(--text); color: white; border-color: var(--text); }
+.fix-actions .fix-save:hover { background: var(--accent); border-color: var(--accent); }
+.fix-actions .fix-clear { color: #b00020; border-color: #f3c4c8; }
+.fix-actions .fix-clear:hover { background: #fdebee; }
+.fix-actions button:disabled { opacity: 0.5; cursor: wait; }
+.fix-status {
+  font-family: var(--mono); font-size: 11px; color: var(--text-3);
+  min-height: 14px;
+}
+.fix-status.error { color: #b00020; }
+.fix-status.success { color: #0c8047; }
+
 @media print {
   body { background: white; }
   main.book { padding: 0; }
   .grid { gap: 14px; grid-template-columns: repeat(4, 1fr); }
   a.li { color: var(--text); }
+  .fix, .fix-toggle, .fix-panel { display: none !important; }
 }
 """
 
@@ -289,6 +346,84 @@ def _render(profiles, dataset_name, supabase_url):
     {grid_html}
     {missing_html}
   </main>
+  <script>
+  // Per-card "Wrong / Fix" controls. Hits POST <relative>/profile/<id>/linkedin
+  // which clears (empty body) or replaces (with new URL) the LinkedIn URL,
+  // re-runs enrichment, and re-caches the photo via the same fallback chain
+  // that build_photos uses. On success we hot-swap the card content from the
+  // returned profile so the user sees the new photo without a full reload.
+  (function() {{
+    // Resolve the API base. Gallery is served at <base>/api/dataset/<id>/facebook,
+    // so two `..` segments take us back to <base>/api.
+    const apiBase = new URL('../../', location.href).pathname.replace(/\\/$/, '');
+    const cards = document.querySelectorAll('.fix');
+    cards.forEach(function(box) {{
+      const pid = box.getAttribute('data-pid');
+      const toggle = box.querySelector('.fix-toggle');
+      const panel = box.querySelector('.fix-panel');
+      const input = box.querySelector('.fix-input');
+      const status = box.querySelector('.fix-status');
+      const saveBtn = box.querySelector('.fix-save');
+      const clearBtn = box.querySelector('.fix-clear');
+      const cancelBtn = box.querySelector('.fix-cancel');
+      const card = box.closest('.card');
+
+      function setStatus(text, kind) {{
+        status.className = 'fix-status' + (kind ? ' ' + kind : '');
+        status.textContent = text || '';
+      }}
+      function setBusy(b) {{
+        [saveBtn, clearBtn, cancelBtn, input].forEach(function(el) {{ el.disabled = !!b; }});
+      }}
+      function show() {{ panel.hidden = false; input.focus(); }}
+      function hide() {{ panel.hidden = true; setStatus(''); }}
+
+      toggle.addEventListener('click', function() {{ panel.hidden ? show() : hide(); }});
+      cancelBtn.addEventListener('click', hide);
+
+      async function submit(body, label) {{
+        setBusy(true); setStatus(label + '…');
+        try {{
+          const resp = await fetch(apiBase + '/profile/' + pid + '/linkedin', {{
+            method: 'POST',
+            headers: {{ 'Content-Type': 'application/json' }},
+            credentials: 'same-origin',
+            body: JSON.stringify(body),
+          }});
+          if (!resp.ok) {{
+            const t = await resp.text();
+            throw new Error('HTTP ' + resp.status + ': ' + t.slice(0, 200));
+          }}
+          const data = await resp.json();
+          setStatus(data.status === 'cleared' ? 'Cleared.' : 'Saved. Refreshing…', 'success');
+          // Easiest reliable refresh: reload the page so the new photo and
+          // role/employer are picked up server-side. Add a cache-buster so
+          // any newly-cached image isn't shadowed by the browser cache.
+          setTimeout(function() {{
+            const u = new URL(location.href); u.searchParams.set('_', Date.now()); location.href = u.toString();
+          }}, 600);
+        }} catch (err) {{
+          setStatus('Failed: ' + err.message, 'error');
+          setBusy(false);
+        }}
+      }}
+
+      saveBtn.addEventListener('click', function() {{
+        const url = input.value.trim();
+        if (!url || url.indexOf('linkedin.com/in/') < 0) {{
+          setStatus('Paste a full https://www.linkedin.com/in/… URL.', 'error');
+          return;
+        }}
+        submit({{ linkedin_url: url }}, 'Re-enriching');
+      }});
+      clearBtn.addEventListener('click', function() {{
+        if (!confirm('Clear LinkedIn for this person? The cached photo will be deleted.')) return;
+        submit({{ linkedin_url: '' }}, 'Clearing');
+      }});
+      input.addEventListener('keydown', function(e) {{ if (e.key === 'Enter') saveBtn.click(); }});
+    }});
+  }})();
+  </script>
 </body>
 </html>
 """

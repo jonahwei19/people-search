@@ -172,6 +172,17 @@ def _ext_for(url: str, content_type: str = "") -> str:
     return "jpg"
 
 
+def delete_photo(supabase_client, photo_path: str) -> bool:
+    """Remove a cached photo from the bucket. Silent on failure."""
+    if not photo_path:
+        return True
+    try:
+        supabase_client.storage.from_(BUCKET).remove([photo_path])
+        return True
+    except Exception:
+        return False
+
+
 def public_url(supabase_url: str, path: str) -> str:
     """Return the public URL for a stored photo. `path` is what cache_photo returned."""
     base = supabase_url.rstrip("/")
