@@ -270,6 +270,7 @@ a.li:hover { text-decoration: underline; text-underline-offset: 2px; }
 .fix-link-photo { color: var(--text-3); }
 .fix-link-photo:hover { color: var(--text-2); text-decoration: underline; }
 
+.fix-edit[hidden] { display: none !important; }
 .fix-edit {
   display: flex; gap: 4px; margin-top: 6px; align-items: center;
 }
