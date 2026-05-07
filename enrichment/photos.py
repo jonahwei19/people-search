@@ -12,11 +12,26 @@ generates it. If you ever need stricter access, switch to signed URLs in
 
 from __future__ import annotations
 
+import hashlib
 import os
 import time
 from typing import Optional, Tuple
 
 import requests
+
+
+def gravatar_url(email: str) -> str:
+    """Return a Gravatar URL for the email, or "" if email is blank.
+
+    `d=404` means: if the user hasn't registered a Gravatar for this
+    email, return a 404 instead of a default cartoon image — so our
+    download logic correctly treats it as "no photo" and falls through
+    to initials.
+    """
+    if not email or not isinstance(email, str):
+        return ""
+    h = hashlib.md5(email.strip().lower().encode("utf-8")).hexdigest()
+    return f"https://www.gravatar.com/avatar/{h}?s=400&d=404"
 
 BUCKET = "facebook-photos"
 # LinkedIn CDN sometimes 403s the default Python UA; a real-browser UA

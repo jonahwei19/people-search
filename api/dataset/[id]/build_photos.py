@@ -32,7 +32,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
 from api._helpers import require_auth, json_response, read_json_body, path_param, get_storage
-from enrichment.photos import cache_photo, URL_DEAD_REASONS
+from enrichment.photos import cache_photo, gravatar_url, URL_DEAD_REASONS
 from enrichment.enrichers import LinkedInEnricher, normalize_linkedin_url
 
 
@@ -123,6 +123,28 @@ class handler(BaseHTTPRequestHandler):
                     stats["enriched"] += 1
                 time.sleep(0.15)
 
+            # If still no URL after EnrichLayer, try Gravatar before giving up.
+            # This catches profiles where EnrichLayer's scrape returned null
+            # for profile_pic_url (private/connections-only/missed) but the
+            # person has a Gravatar registered against their email.
+            if not url and getattr(profile, "email", ""):
+                gv = gravatar_url(profile.email)
+                if gv:
+                    gv_path, _gv_reason = cache_photo(storage.client, profile.id, gv, overwrite=force)
+                    if gv_path:
+                        profile.photo_path = gv_path
+                        try:
+                            storage.client.table("profiles").update(
+                                {"photo_path": gv_path}
+                            ).eq("id", profile.id).eq("account_id", account["account_id"]).execute()
+                            stats["cached"] += 1
+                            stats["gravatar"] = stats.get("gravatar", 0) + 1
+                        except Exception as e:
+                            stats["failed"] += 1
+                            _bump_reason(f"db_update:{type(e).__name__}")
+                        worked += 1
+                        continue
+
             if not url:
                 stats["no_url"] += 1
                 continue
@@ -142,6 +164,18 @@ class handler(BaseHTTPRequestHandler):
                     stats["enriched"] += 1
                     path, reason = cache_photo(storage.client, profile.id, fresh, overwrite=True)
                 time.sleep(0.15)
+
+            # Gravatar fallback: when EnrichLayer can't supply a photo
+            # (private profile / connections-only / scraper missed it),
+            # try the email's Gravatar. d=404 means we only get a real
+            # bytestream if the user actually registered one.
+            if not path and getattr(profile, "email", ""):
+                gv = gravatar_url(profile.email)
+                if gv:
+                    gv_path, gv_reason = cache_photo(storage.client, profile.id, gv, overwrite=True)
+                    if gv_path:
+                        path, reason = gv_path, ""
+                        stats["gravatar"] = stats.get("gravatar", 0) + 1
 
             if not path:
                 stats["failed"] += 1
