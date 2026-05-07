@@ -138,36 +138,20 @@ main.book {
   padding: 56px 32px 80px;
 }
 
-.masthead { margin-bottom: 40px; }
-.overline {
-  font-family: var(--mono);
-  font-size: 11px;
-  letter-spacing: 0.04em;
-  color: var(--text-3);
-  margin: 0 0 6px;
-}
+.masthead { margin-bottom: 32px; }
 .title {
-  font-size: 32px;
+  font-size: 28px;
   font-weight: 600;
   letter-spacing: -0.02em;
-  margin: 0;
+  margin: 0 0 4px;
   color: var(--text);
 }
-.title .amp { color: var(--text-3); font-weight: 400; }
-.tally {
-  display: flex;
-  gap: 28px;
-  margin-top: 14px;
-  padding-top: 14px;
-  border-top: 1px solid var(--border);
+.tally-mono {
   font-family: var(--mono);
   font-size: 12px;
-  color: var(--text-2);
+  color: var(--text-3);
+  margin: 0;
 }
-.tally .num { color: var(--text); font-weight: 500; margin-right: 6px; }
-.tally .div { display: none; }
-.tally .cell { display: inline-flex; gap: 6px; align-items: baseline; }
-.tally .cell .label { color: var(--text-3); font-size: 11px; }
 
 .grid {
   display: grid;
@@ -210,32 +194,31 @@ a.li {
 }
 a.li:hover { text-decoration: underline; text-underline-offset: 2px; }
 
-section.section { margin-top: 56px; }
-section.section h2 {
-  font-size: 18px; font-weight: 600; letter-spacing: -0.01em;
-  margin: 0 0 4px; color: var(--text);
+.missing { margin-top: 48px; }
+.missing-label {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  margin: 0 0 8px;
 }
-section.section h2 .count {
-  font-family: var(--mono); font-size: 12px; font-weight: 400;
-  color: var(--text-3); margin-left: 8px;
-}
-section.section .hint { font-size: 13px; color: var(--text-2); max-width: 64ch; margin: 0 0 20px; }
-
-.ornament { display: none; }
+.missing-label .count { margin-left: 4px; }
 
 .absent { list-style: none; padding: 0; margin: 0; border-top: 1px solid var(--border); }
 .absent li {
   display: grid;
-  grid-template-columns: 1fr auto auto;
+  grid-template-columns: minmax(180px, 1fr) minmax(140px, 1fr) auto;
   gap: 16px;
-  padding: 10px 0;
+  padding: 9px 0;
   border-bottom: 1px solid var(--border);
   font-size: 13px;
   align-items: baseline;
 }
 .absent .who { font-weight: 500; color: var(--text); }
 .absent .org { color: var(--text-2); }
-.absent .tag { font-family: var(--mono); font-size: 11px; color: var(--text-3); }
+.absent .email { font-family: var(--mono); font-size: 12px; color: var(--text-3);
+                 text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 .empty {
   padding: 32px 0;
@@ -254,50 +237,33 @@ section.section .hint { font-size: 13px; color: var(--text-2); max-width: 64ch; 
 
 
 def _render(profiles, dataset_name, supabase_url):
-    confirmed, review, missing = [], [], []
+    has_link, missing = [], []
     for p in profiles:
-        if not p.linkedin_url:
-            missing.append(p)
-            continue
-        src = getattr(p, "linkedin_url_source", "")
-        if src == "user":
-            confirmed.append(p)
+        if p.linkedin_url:
+            has_link.append(p)
         else:
-            review.append(p)
-
-    confirmed.sort(key=lambda p: (p.name or "").lower())
-    review.sort(key=lambda p: (p.name or "").lower())
+            missing.append(p)
+    has_link.sort(key=lambda p: (p.name or "").lower())
     missing.sort(key=lambda p: (p.name or "").lower())
 
-    if confirmed:
-        confirmed_grid = (
-            f'<div class="grid">{chr(10).join(_card(p, supabase_url) for p in confirmed)}</div>'
-        )
-    else:
-        confirmed_grid = ""
-
-    review_html = ""
-    if review:
-        review_cards = "\n".join(_card(p, supabase_url) for p in review)
-        review_html = f"""
-<div class="ornament"><span>⁂</span></div>
-<section class="section">
-  <p class="hint">LinkedIn URL was matched by identity search rather than uploaded — verify before relying on it.</p>
-  <div class="grid">{review_cards}</div>
-</section>"""
+    grid_html = (
+        f'<div class="grid">{chr(10).join(_card(p, supabase_url) for p in has_link)}</div>'
+        if has_link else ""
+    )
 
     missing_html = ""
     if missing:
         rows = "\n".join(
-            f'<li><span class="who">{_html.escape(p.name or "")}</span>'
+            f'<li>'
+            f'<span class="who">{_html.escape(p.name or "")}</span>'
             f'<span class="org">{_html.escape(_employer(p))}</span>'
-            f'<span class="tag">No LinkedIn</span></li>'
+            f'<span class="email">{_html.escape(getattr(p, "email", "") or "")}</span>'
+            f'</li>'
             for p in missing
         )
         missing_html = f"""
-<div class="ornament"><span>⁂</span></div>
-<section class="section">
-  <h2>No LinkedIn <span class="count">{len(missing):03d}</span></h2>
+<section class="missing">
+  <p class="missing-label">No LinkedIn <span class="count">{len(missing)}</span></p>
   <ul class="absent">{rows}</ul>
 </section>"""
 
@@ -316,22 +282,11 @@ def _render(profiles, dataset_name, supabase_url):
 <body>
   <main class="book">
     <header class="masthead">
-      <p class="overline"><span class="vol">Volume I</span> &nbsp;·&nbsp; {name_html}</p>
-      <h1 class="title">Face <span class="amp">Book</span></h1>
-      <div class="tally">
-        <div class="cell"><span class="num">{len(confirmed):03d}</span><span class="label">Confirmed</span></div>
-        <div class="div" aria-hidden="true"></div>
-        <div class="cell center"><span class="num">{len(review):03d}</span><span class="label">Needs review</span></div>
-        <div class="div" aria-hidden="true"></div>
-        <div class="cell right"><span class="num">{len(missing):03d}</span><span class="label">No LinkedIn</span></div>
-      </div>
+      <h1 class="title">{name_html}</h1>
+      <p class="tally-mono">{len(has_link)} {"profile" if len(has_link) == 1 else "profiles"}{f" · {len(missing)} no LinkedIn" if missing else ""}</p>
     </header>
 
-    <section class="roll">
-      {confirmed_grid}
-    </section>
-
-    {review_html}
+    {grid_html}
     {missing_html}
   </main>
 </body>
