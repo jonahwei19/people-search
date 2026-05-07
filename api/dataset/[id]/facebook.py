@@ -88,27 +88,28 @@ def _card(p, supabase_url: str) -> str:
     )
     # Per-card "Wrong / Fix" controls. Hits POST /api/profile/<id>/linkedin
     # which clears or replaces the URL and re-caches the photo.
+    has_li = bool(p.linkedin_url)
     fix_html = (
         f'<div class="fix" data-pid="{_html.escape(p.id)}">'
-        f'<button class="fix-toggle" type="button">Wrong photo / fix</button>'
-        f'<div class="fix-panel" hidden>'
-        f'  <label class="fix-label">Replace LinkedIn URL <span class="fix-hint">re-enriches + recaches photo</span></label>'
-        f'  <div class="fix-row">'
-        f'    <input type="text" class="fix-li-input" placeholder="https://www.linkedin.com/in/…" />'
-        f'    <button class="fix-li-save" type="button">Save</button>'
-        f'  </div>'
-        f'  <label class="fix-label">Or paste a photo URL <span class="fix-hint">any public image — org page, twitter, etc.</span></label>'
-        f'  <div class="fix-row">'
-        f'    <input type="text" class="fix-photo-input" placeholder="https://…/photo.jpg" />'
-        f'    <button class="fix-photo-save" type="button">Save</button>'
-        f'  </div>'
-        f'  <div class="fix-actions">'
-        f'    <button class="fix-clear" type="button" title="Clear LinkedIn + cached photo (shows initials)">Clear LinkedIn</button>'
-        f'    <button class="fix-clear-photo" type="button" title="Clear just the photo">Clear photo only</button>'
-        f'    <button class="fix-cancel" type="button">Close</button>'
-        f'  </div>'
-        f'  <div class="fix-status" aria-live="polite"></div>'
-        f'</div></div>'
+        # Default state: tiny inline links. Inputs are hidden until a link
+        # is clicked — same pattern as the search-modal correction UI.
+        f'<div class="fix-default">'
+        f'  <button class="fix-link fix-link-li" type="button"{" hidden" if not has_li else ""}>Wrong LinkedIn</button>'
+        f'  <button class="fix-link fix-link-photo" type="button">Replace photo</button>'
+        f'</div>'
+        # Each input appears in-place when its trigger is clicked.
+        f'<div class="fix-edit fix-edit-li" hidden>'
+        f'  <input type="text" class="fix-li-input" placeholder="https://www.linkedin.com/in/…" />'
+        f'  <button class="fix-li-save" type="button">Set</button>'
+        f'  <button class="fix-cancel-li" type="button" aria-label="Cancel">×</button>'
+        f'</div>'
+        f'<div class="fix-edit fix-edit-photo" hidden>'
+        f'  <input type="text" class="fix-photo-input" placeholder="https://…/photo.jpg" />'
+        f'  <button class="fix-photo-save" type="button">Set</button>'
+        f'  <button class="fix-cancel-photo" type="button" aria-label="Cancel">×</button>'
+        f'</div>'
+        f'<div class="fix-status" aria-live="polite"></div>'
+        f'</div>'
     )
 
     return f"""
@@ -252,55 +253,48 @@ a.li:hover { text-decoration: underline; text-underline-offset: 2px; }
   font-size: 14px;
 }
 
-/* "Wrong photo / fix" per-card controls */
-.fix { margin-top: 8px; }
-.fix-toggle {
+/* Per-card correction controls. Mirrors the search-modal pattern:
+   default state shows only inline trigger links; the input only
+   appears after a trigger is clicked. */
+.fix { margin-top: 6px; }
+.fix-default { display: flex; gap: 10px; }
+.fix-link {
   background: none; border: none; padding: 0;
-  font-family: var(--mono); font-size: 11px;
-  color: var(--text-3); cursor: pointer;
+  font-family: var(--mono); font-size: 11px; cursor: pointer;
 }
-.fix-toggle:hover { color: var(--text-2); text-decoration: underline; }
-.fix-panel {
-  margin-top: 6px; padding: 10px; background: var(--surface);
-  border: 1px solid var(--border); border-radius: 6px;
-  display: flex; flex-direction: column; gap: 8px;
+.fix-link-li    { color: #b00020; }
+.fix-link-li:hover { text-decoration: underline; }
+.fix-link-photo { color: var(--text-3); }
+.fix-link-photo:hover { color: var(--text-2); text-decoration: underline; }
+
+.fix-edit {
+  display: flex; gap: 4px; margin-top: 6px; align-items: center;
 }
-.fix-label {
-  font-family: var(--mono); font-size: 10px;
-  letter-spacing: 0.04em; text-transform: uppercase;
-  color: var(--text-2); display: flex; gap: 6px; align-items: baseline;
-}
-.fix-hint { font-size: 10px; color: var(--text-3); text-transform: none; letter-spacing: 0; }
-.fix-row { display: flex; gap: 6px; }
-.fix-row input {
+.fix-edit input {
   font: inherit; font-size: 12px;
-  padding: 6px 8px; border: 1px solid var(--border-2);
+  padding: 5px 8px; border: 1px solid var(--border-2);
   border-radius: 4px; outline: none;
   flex: 1; min-width: 0;
 }
-.fix-row input:focus { border-color: var(--accent); }
-.fix-row button {
+.fix-edit input:focus { border-color: var(--accent); }
+.fix-edit button {
   font: inherit; font-size: 11px; cursor: pointer;
-  padding: 5px 10px; border-radius: 4px;
+  padding: 5px 10px; border-radius: 4px; white-space: nowrap;
   border: 1px solid var(--text); background: var(--text); color: white;
-  white-space: nowrap;
 }
-.fix-row button:hover { background: var(--accent); border-color: var(--accent); }
-.fix-actions { display: flex; gap: 6px; flex-wrap: wrap; padding-top: 4px; border-top: 1px solid var(--border); }
-.fix-actions button {
-  font: inherit; font-size: 11px; cursor: pointer;
-  padding: 5px 10px; border-radius: 4px;
-  border: 1px solid var(--border-2); background: var(--surface);
-  color: var(--text);
+.fix-edit button:hover { background: var(--accent); border-color: var(--accent); }
+.fix-edit button[class*="cancel"] {
+  background: var(--surface); color: var(--text-3);
+  border-color: var(--border-2);
+  padding: 5px 8px; line-height: 1;
 }
-.fix-actions button:hover { background: var(--bg); }
-.fix-actions .fix-clear { color: #b00020; border-color: #f3c4c8; }
-.fix-actions .fix-clear:hover { background: #fdebee; }
-.fix-row button:disabled, .fix-actions button:disabled { opacity: 0.5; cursor: wait; }
+.fix-edit button[class*="cancel"]:hover { color: var(--text); background: var(--bg); }
+.fix-edit button:disabled { opacity: 0.5; cursor: wait; }
 .fix-status {
   font-family: var(--mono); font-size: 11px; color: var(--text-3);
-  min-height: 14px;
+  min-height: 0; margin-top: 4px;
 }
+.fix-status:empty { display: none; }
 .fix-status.error { color: #b00020; }
 .fix-status.success { color: #0c8047; }
 
@@ -368,98 +362,115 @@ def _render(profiles, dataset_name, supabase_url):
     {missing_html}
   </main>
   <script>
-  // Per-card "Wrong / Fix" controls. Four actions per card:
-  //   - LinkedIn save  → POST /api/profile/<id>/linkedin {{linkedin_url: "..."}}
-  //   - LinkedIn clear → POST /api/profile/<id>/linkedin {{linkedin_url: ""}}
-  //   - Photo save     → POST /api/profile/<id>/photo    {{photo_url: "..."}}
-  //   - Photo clear    → POST /api/profile/<id>/photo    {{clear: true}}
-  // On success: reload with cache-buster so the new photo lands.
+  // Per-card correction controls. Mirrors the search-modal pattern:
+  //   - "Wrong LinkedIn" → clears the URL immediately, reveals input for new URL.
+  //   - "Replace photo"  → reveals just the photo URL input (no destructive default).
+  // On any save: reload with a cache-buster so the new photo paints.
   (function() {{
-    // Gallery is served at <base>/api/dataset/<id>/facebook,
-    // so two `..` from there land at <base>/api.
     const apiBase = new URL('../../', location.href).pathname.replace(/\\/$/, '');
 
     document.querySelectorAll('.fix').forEach(function(box) {{
       const pid       = box.getAttribute('data-pid');
-      const toggle    = box.querySelector('.fix-toggle');
-      const panel     = box.querySelector('.fix-panel');
+      const linkLi    = box.querySelector('.fix-link-li');
+      const linkPhoto = box.querySelector('.fix-link-photo');
+      const editLi    = box.querySelector('.fix-edit-li');
+      const editPhoto = box.querySelector('.fix-edit-photo');
       const liInput   = box.querySelector('.fix-li-input');
       const liSave    = box.querySelector('.fix-li-save');
+      const liCancel  = box.querySelector('.fix-cancel-li');
       const photoInput= box.querySelector('.fix-photo-input');
       const photoSave = box.querySelector('.fix-photo-save');
-      const clearLi   = box.querySelector('.fix-clear');
-      const clearPhoto= box.querySelector('.fix-clear-photo');
-      const cancel    = box.querySelector('.fix-cancel');
+      const photoCancel = box.querySelector('.fix-cancel-photo');
       const status    = box.querySelector('.fix-status');
-      const allButtons = [liSave, photoSave, clearLi, clearPhoto, cancel];
-      const allInputs  = [liInput, photoInput];
 
       function setStatus(text, kind) {{
         status.className = 'fix-status' + (kind ? ' ' + kind : '');
         status.textContent = text || '';
       }}
-      function setBusy(b) {{
-        allButtons.forEach(function(el) {{ el.disabled = !!b; }});
-        allInputs.forEach(function(el) {{ el.disabled = !!b; }});
+      function setBusy(b, group) {{
+        const els = group === 'li' ? [liInput, liSave, liCancel]
+                  : group === 'photo' ? [photoInput, photoSave, photoCancel]
+                  : [liInput, liSave, liCancel, photoInput, photoSave, photoCancel];
+        els.forEach(function(el) {{ if (el) el.disabled = !!b; }});
       }}
       function reloadSoon() {{
         setTimeout(function() {{
           const u = new URL(location.href); u.searchParams.set('_', Date.now()); location.href = u.toString();
-        }}, 600);
+        }}, 500);
       }}
 
-      toggle.addEventListener('click', function() {{
-        if (panel.hidden) {{ panel.hidden = false; liInput.focus(); }}
-        else {{ panel.hidden = true; setStatus(''); }}
-      }});
-      cancel.addEventListener('click', function() {{ panel.hidden = true; setStatus(''); }});
-
-      async function send(endpoint, body, label, successMsg) {{
-        setBusy(true); setStatus(label + '…');
-        try {{
-          const resp = await fetch(apiBase + '/profile/' + pid + '/' + endpoint, {{
-            method: 'POST',
-            headers: {{ 'Content-Type': 'application/json' }},
-            credentials: 'same-origin',
-            body: JSON.stringify(body),
-          }});
-          const text = await resp.text();
-          if (!resp.ok) {{
-            let msg = 'HTTP ' + resp.status;
-            try {{ const j = JSON.parse(text); if (j.error) msg = j.error; }} catch(_) {{}}
-            throw new Error(msg);
-          }}
-          setStatus(successMsg, 'success');
-          reloadSoon();
-        }} catch (err) {{
-          setStatus('Failed: ' + err.message, 'error');
-          setBusy(false);
+      async function call(endpoint, body) {{
+        const resp = await fetch(apiBase + '/profile/' + pid + '/' + endpoint, {{
+          method: 'POST',
+          headers: {{ 'Content-Type': 'application/json' }},
+          credentials: 'same-origin',
+          body: JSON.stringify(body),
+        }});
+        const text = await resp.text();
+        if (!resp.ok) {{
+          let msg = 'HTTP ' + resp.status;
+          try {{ const j = JSON.parse(text); if (j.error) msg = j.error; }} catch(_) {{}}
+          throw new Error(msg);
         }}
       }}
 
-      liSave.addEventListener('click', function() {{
+      // Click "Wrong LinkedIn" → clear the URL immediately (search-modal
+      // behavior), hide the trigger, reveal the input for a corrected URL.
+      linkLi.addEventListener('click', async function() {{
+        if (!confirm('Mark LinkedIn as wrong? The URL and cached photo will be cleared while you type the correct one.')) return;
+        setBusy(true, 'li'); setStatus('Clearing…');
+        try {{
+          await call('linkedin', {{ linkedin_url: '' }});
+          linkLi.hidden = true;
+          editLi.hidden = false;
+          setStatus('Cleared. Paste the correct URL below.', 'success');
+          liInput.value = ''; liInput.focus();
+          setBusy(false, 'li');
+        }} catch (err) {{
+          setStatus('Failed: ' + err.message, 'error');
+          setBusy(false, 'li');
+        }}
+      }});
+
+      // Save the corrected LinkedIn URL → re-enrich + recache + reload.
+      liSave.addEventListener('click', async function() {{
         const url = liInput.value.trim();
         if (!url || url.indexOf('linkedin.com/in/') < 0) {{
           setStatus('Paste a full https://www.linkedin.com/in/… URL.', 'error'); return;
         }}
-        send('linkedin', {{ linkedin_url: url }}, 'Re-enriching', 'Saved. Refreshing…');
+        setBusy(true, 'li'); setStatus('Re-enriching…');
+        try {{
+          await call('linkedin', {{ linkedin_url: url }});
+          setStatus('Saved. Refreshing…', 'success');
+          reloadSoon();
+        }} catch (err) {{
+          setStatus('Failed: ' + err.message, 'error');
+          setBusy(false, 'li');
+        }}
       }});
-      photoSave.addEventListener('click', function() {{
+      liCancel.addEventListener('click', function() {{ editLi.hidden = true; setStatus(''); }});
+      liInput.addEventListener('keydown', function(e) {{ if (e.key === 'Enter') liSave.click(); }});
+
+      // "Replace photo" → reveal just the photo input. Submit caches it.
+      linkPhoto.addEventListener('click', function() {{
+        editPhoto.hidden = false; setStatus(''); photoInput.value = ''; photoInput.focus();
+      }});
+      photoSave.addEventListener('click', async function() {{
         const url = photoInput.value.trim();
         if (!/^https?:\\/\\//i.test(url)) {{
           setStatus('Paste a full http(s) image URL.', 'error'); return;
         }}
-        send('photo', {{ photo_url: url }}, 'Caching photo', 'Saved. Refreshing…');
+        setBusy(true, 'photo'); setStatus('Caching photo…');
+        try {{
+          await call('photo', {{ photo_url: url }});
+          setStatus('Saved. Refreshing…', 'success');
+          reloadSoon();
+        }} catch (err) {{
+          setStatus('Failed: ' + err.message, 'error');
+          setBusy(false, 'photo');
+        }}
       }});
-      clearLi.addEventListener('click', function() {{
-        if (!confirm('Clear LinkedIn for this person? The cached photo will be deleted.')) return;
-        send('linkedin', {{ linkedin_url: '' }}, 'Clearing', 'Cleared. Refreshing…');
-      }});
-      clearPhoto.addEventListener('click', function() {{
-        if (!confirm('Clear just the cached photo? LinkedIn URL stays.')) return;
-        send('photo', {{ clear: true }}, 'Clearing photo', 'Cleared. Refreshing…');
-      }});
-      liInput.addEventListener('keydown', function(e) {{ if (e.key === 'Enter') liSave.click(); }});
+      photoCancel.addEventListener('click', function() {{ editPhoto.hidden = true; setStatus(''); }});
       photoInput.addEventListener('keydown', function(e) {{ if (e.key === 'Enter') photoSave.click(); }});
     }});
   }})();
