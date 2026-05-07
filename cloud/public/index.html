@@ -278,10 +278,10 @@ body { font-family: var(--font-sans);
 window.APP_MODE = 'cloud';
 // Path prefix when served under a sub-path (e.g. EC2 Caddy at
 // /people-search/). Empty string = served at root (Vercel today).
-window.APP_BASE = '{{APP_BASE}}';
+window.APP_BASE = '';
 </script>
 <button id="theme-toggle" style="position:fixed;top:12px;right:16px;background:var(--card);border:1px solid var(--border);border-radius:8px;padding:6px 10px;cursor:pointer;font-size:12px;font-weight:500;color:var(--text2);z-index:9999;box-shadow:var(--shadow);">Dark</button>
-<div id="app-version" title="87ef006 · 2026-05-06 — Editorial face-book gallery_ cream paper _ Fraunces _ tally masthead" style="position:fixed;bottom:10px;left:12px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;color:var(--text3);opacity:0.7;z-index:9999;pointer-events:none;user-select:none;">87ef006 · 2026-05-06</div>
+<div id="app-version" title="ca07c77 · 2026-05-06 — Redesign people-search_ Geist token system" style="position:fixed;bottom:10px;left:12px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;color:var(--text3);opacity:0.7;z-index:9999;pointer-events:none;user-select:none;">ca07c77 · 2026-05-06</div>
 
 <!-- ═══ LOGIN PAGE ═══ -->
 <div id="login-page" class="login-page">
@@ -800,7 +800,7 @@ async function checkSession() {
   }
   try {
     showLoading('Checking session...');
-    const r = await fetch('/api/keys');
+    const r = await fetch(apiUrl('/api/keys'));
     hideLoading();
     if (r.ok) {
       // Session is valid — go to app
@@ -1479,7 +1479,7 @@ async function openFaceBook(id) {
     if (!data.batch_capped) break;
   }
 
-  const url = '/api/dataset/' + id + '/facebook';
+  const url = apiUrl('/api/dataset/' + id + '/facebook');
   if (tab && !tab.closed) tab.location.href = url;
   else window.open(url, '_blank');
 }
