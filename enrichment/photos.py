@@ -62,6 +62,81 @@ def scrape_linkedin_photo_url(linkedin_url: str) -> str:
     return m.group(1) if m else ""
 
 
+def refresh_photo(
+    supabase_client,
+    profile,
+    account_id: str,
+    *,
+    enricher=None,
+    overwrite: bool = True,
+) -> Tuple[Optional[str], str]:
+    """Run the full photo-cache fallback chain for one profile and persist.
+
+    Tries, in order:
+      1. cached `linkedin_enriched.profile_pic_url`
+      2. EnrichLayer fresh fetch
+      3. LinkedIn HTML scrape (signed photo URL via crawler UA)
+      4. Gravatar (md5 of email, d=404)
+
+    On success, updates `profiles.photo_path` in the DB and returns
+    (path, ""). On failure, returns (None, reason). Used by both the
+    on-demand backfill (api/dataset/[id]/build_photos.py) and by the
+    LinkedIn-correction endpoint (api/profile/[id]/linkedin.py) so a
+    new URL re-caches the photo automatically.
+    """
+    # Step 1: try whatever URL we already have.
+    enriched = profile.linkedin_enriched if isinstance(profile.linkedin_enriched, dict) else {}
+    url = enriched.get("profile_pic_url") or ""
+
+    # Step 2: EnrichLayer fresh.
+    if not url and getattr(profile, "linkedin_url", ""):
+        if enricher is None:
+            from .enrichers import LinkedInEnricher
+            enricher = LinkedInEnricher()
+        if enricher.api_key:
+            try:
+                from .enrichers import normalize_linkedin_url
+                raw, _ = enricher._call_api(normalize_linkedin_url(profile.linkedin_url))
+                if isinstance(raw, dict):
+                    url = (raw.get("profile_pic_url") or "").strip()
+                    if url:
+                        enriched["profile_pic_url"] = url
+                        profile.linkedin_enriched = enriched
+                        try:
+                            supabase_client.table("profiles").update(
+                                {"linkedin_enriched": enriched}
+                            ).eq("id", profile.id).eq("account_id", account_id).execute()
+                        except Exception:
+                            pass
+            except Exception:
+                pass
+
+    # NOTE: previously had a step 3 that scraped LinkedIn's HTML directly
+    # for a signed profile-displayphoto URL. Disabled — the first match in
+    # the HTML is often a sidebar profile, not the page subject, leading to
+    # wrong photos. EnrichLayer is the authoritative source.
+
+    # Step 3: Gravatar.
+    if not url and getattr(profile, "email", ""):
+        url = gravatar_url(profile.email)
+
+    if not url:
+        return None, "no_source"
+
+    path, reason = cache_photo(supabase_client, profile.id, url, overwrite=overwrite)
+    if not path:
+        return None, reason or "cache_failed"
+
+    profile.photo_path = path
+    try:
+        supabase_client.table("profiles").update(
+            {"photo_path": path}
+        ).eq("id", profile.id).eq("account_id", account_id).execute()
+    except Exception as e:
+        return None, f"db_update:{type(e).__name__}"
+    return path, ""
+
+
 def gravatar_url(email: str) -> str:
     """Return a Gravatar URL for the email, or "" if email is blank.
 

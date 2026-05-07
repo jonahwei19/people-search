@@ -32,7 +32,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
 from api._helpers import require_auth, json_response, read_json_body, path_param, get_storage
-from enrichment.photos import cache_photo, gravatar_url, scrape_linkedin_photo_url, URL_DEAD_REASONS
+from enrichment.photos import cache_photo, gravatar_url, URL_DEAD_REASONS
 from enrichment.enrichers import LinkedInEnricher, normalize_linkedin_url
 
 
@@ -123,16 +123,11 @@ class handler(BaseHTTPRequestHandler):
                     stats["enriched"] += 1
                 time.sleep(0.15)
 
-            # Still no URL after EnrichLayer → scrape LinkedIn directly with
-            # the social-bot UA. EnrichLayer returns null for some profiles
-            # but LinkedIn's public HTML still has signed photo URLs for
-            # crawlers. This catches the bulk of "EnrichLayer dropped it" cases.
-            if not url and profile.linkedin_url:
-                scraped = scrape_linkedin_photo_url(profile.linkedin_url)
-                if scraped:
-                    url = scraped
-                    _persist_enriched_url(storage, account["account_id"], profile, scraped)
-                    stats["scraped_li"] = stats.get("scraped_li", 0) + 1
+            # NOTE: LinkedIn HTML scrape was tried as a fallback here but
+            # disabled — the first `profile-displayphoto` URL in the page
+            # HTML is often a "people also viewed" sidebar thumbnail, not
+            # the page subject. That caused wrong photos to be cached
+            # against the wrong profiles.
 
             # Gravatar fallback for profiles with no LinkedIn-derived URL
             # but a registered email. d=404 ensures we only keep a real
@@ -173,15 +168,6 @@ class handler(BaseHTTPRequestHandler):
                     _persist_enriched_url(storage, account["account_id"], profile, fresh)
                     stats["enriched"] += 1
                     path, reason = cache_photo(storage.client, profile.id, fresh, overwrite=True)
-                # Last-ditch: scrape LinkedIn page directly. EnrichLayer
-                # may have given us a stale URL while the live profile
-                # actually has a fresh signed photo.
-                if not path:
-                    scraped = scrape_linkedin_photo_url(profile.linkedin_url)
-                    if scraped and scraped != url:
-                        _persist_enriched_url(storage, account["account_id"], profile, scraped)
-                        stats["scraped_li"] = stats.get("scraped_li", 0) + 1
-                        path, reason = cache_photo(storage.client, profile.id, scraped, overwrite=True)
                 time.sleep(0.15)
 
             # Gravatar fallback: when EnrichLayer can't supply a photo
