@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>People Search — moved</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta http-equiv="refresh" content="6;url=https://agents.tail83bd73.ts.net/people-search/" />
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    color: #1d1d1f;
+    background: linear-gradient(180deg, #fafaf8 0%, #f1efeb 100%);
+    display: flex; align-items: center; justify-content: center;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  main {
+    max-width: 520px;
+    padding: 48px 32px;
+    text-align: center;
+  }
+  h1 {
+    margin: 0 0 18px;
+    font-size: 32px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    line-height: 1.2;
+  }
+  p { margin: 0 0 24px; color: #4a4a4f; line-height: 1.55; font-size: 16px; }
+  p .small { color: #86868b; font-size: 14px; }
+  a.btn {
+    display: inline-block;
+    padding: 12px 22px;
+    border-radius: 9999px;
+    background: #1d1d1f;
+    color: white;
+    text-decoration: none;
+    font-weight: 500;
+    font-size: 15px;
+    transition: transform 80ms ease, background 120ms ease;
+  }
+  a.btn:hover { background: #353537; transform: translateY(-1px); }
+  .countdown {
+    margin-top: 18px;
+    color: #86868b;
+    font-size: 13px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  .url {
+    color: #86868b;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 13px;
+    word-break: break-all;
+  }
+</style>
+</head>
+<body>
+<main>
+  <h1>People Search has moved</h1>
+  <p>This app now lives on its own server for faster deploys and longer-running jobs. Same login, same data — just a new URL.</p>
+  <p><a class="btn" href="https://agents.tail83bd73.ts.net/people-search/">Take me there →</a></p>
+  <p class="countdown" id="countdown">Redirecting in 6s…</p>
+  <p class="url">https://agents.tail83bd73.ts.net/people-search/</p>
+</main>
+<script>
+  let n = 6;
+  const el = document.getElementById('countdown');
+  setInterval(() => {
+    n--;
+    if (n <= 0) { el.textContent = 'Redirecting…'; return; }
+    el.textContent = `Redirecting in ${n}s…`;
+  }, 1000);
+</script>
+</body>
+</html>
