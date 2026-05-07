@@ -89,15 +89,15 @@ def _card(p, supabase_url: str) -> str:
     # Per-card "Wrong / Fix" controls. Hits POST /api/profile/<id>/linkedin
     # which clears or replaces the URL and re-caches the photo.
     has_li = bool(p.linkedin_url)
+    # Fix controls are HIDDEN until the card itself is clicked (search-modal
+    # pattern: click the box → tools appear). Then the small link triggers
+    # show; then clicking a trigger reveals its input.
     fix_html = (
         f'<div class="fix" data-pid="{_html.escape(p.id)}">'
-        # Default state: tiny inline links. Inputs are hidden until a link
-        # is clicked — same pattern as the search-modal correction UI.
         f'<div class="fix-default">'
         f'  <button class="fix-link fix-link-li" type="button"{" hidden" if not has_li else ""}>Wrong LinkedIn</button>'
         f'  <button class="fix-link fix-link-photo" type="button">Replace photo</button>'
         f'</div>'
-        # Each input appears in-place when its trigger is clicked.
         f'<div class="fix-edit fix-edit-li" hidden>'
         f'  <input type="text" class="fix-li-input" placeholder="https://www.linkedin.com/in/…" />'
         f'  <button class="fix-li-save" type="button">Set</button>'
@@ -254,10 +254,13 @@ a.li:hover { text-decoration: underline; text-underline-offset: 2px; }
 }
 
 /* Per-card correction controls. Mirrors the search-modal pattern:
-   default state shows only inline trigger links; the input only
-   appears after a trigger is clicked. */
-.fix { margin-top: 6px; }
-.fix-default { display: flex; gap: 10px; }
+   the entire .fix block is hidden until the card is clicked. Inside it,
+   the inline trigger links show; clicking a trigger reveals its input. */
+.card { cursor: pointer; }
+.fix { margin-top: 0; }
+.fix-default { display: none; gap: 10px; margin-top: 8px; }
+.card.expanded { cursor: default; }
+.card.expanded .fix-default { display: flex; }
 .fix-link {
   background: none; border: none; padding: 0;
   font-family: var(--mono); font-size: 11px; cursor: pointer;
@@ -368,6 +371,22 @@ def _render(profiles, dataset_name, supabase_url):
   // On any save: reload with a cache-buster so the new photo paints.
   (function() {{
     const apiBase = new URL('../../', location.href).pathname.replace(/\\/$/, '');
+
+    // Card-click reveals the .fix block. Clicks on the LinkedIn link,
+    // the trigger buttons, and any input/button inside .fix don't toggle
+    // the card so editing flows aren't interrupted.
+    document.querySelectorAll('.card').forEach(function(card) {{
+      const fix = card.querySelector('.fix');
+      if (!fix) return;
+      card.addEventListener('click', function(ev) {{
+        // Don't toggle when clicking the external LinkedIn link.
+        if (ev.target.closest('a.li')) return;
+        card.classList.toggle('expanded');
+      }});
+      // Clicks inside the fix UI don't bubble — keeps inputs/buttons working
+      // without collapsing the card the moment you interact with them.
+      fix.addEventListener('click', function(ev) {{ ev.stopPropagation(); }});
+    }});
 
     document.querySelectorAll('.fix').forEach(function(box) {{
       const pid       = box.getAttribute('data-pid');
