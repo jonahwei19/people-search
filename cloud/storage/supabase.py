@@ -29,6 +29,22 @@ from search.models import (
 )
 
 
+def _strip_nulls(value):
+    """Recursively remove NUL bytes from any string under `value`.
+
+    Postgres rejects \\u0000 in JSONB and TEXT (error 22P05). EnrichLayer
+    and web fetchers occasionally surface them in scraped content. This
+    is the last line before upsert, so apply broadly.
+    """
+    if isinstance(value, str):
+        return value.replace("\x00", "") if "\x00" in value else value
+    if isinstance(value, dict):
+        return {k: _strip_nulls(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_strip_nulls(v) for v in value]
+    return value
+
+
 class SupabaseStorage:
     """Supabase-backed storage for People Search.
 
@@ -140,7 +156,7 @@ class SupabaseStorage:
         if not profiles:
             return
         self._assign_person_ids(profiles)
-        rows = [self._profile_to_row(p, dataset_id) for p in profiles]
+        rows = [_strip_nulls(self._profile_to_row(p, dataset_id)) for p in profiles]
         for i in range(0, len(rows), self.BATCH_SIZE):
             batch = rows[i : i + self.BATCH_SIZE]
             self.client.table("profiles").upsert(batch).execute()
