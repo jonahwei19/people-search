@@ -13,11 +13,53 @@ generates it. If you ever need stricter access, switch to signed URLs in
 from __future__ import annotations
 
 import hashlib
+import html as _html
 import os
+import re
 import time
 from typing import Optional, Tuple
 
 import requests
+
+# LinkedIn renders its public profile HTML to social-card crawlers
+# (Facebook, Slack, Twitter) with the profile photo URL signed and
+# usable. We use the FB external-hit UA which is the most reliably
+# served. The signed URL has a `?e=…&v=beta&t=…` token; without it
+# media.licdn.com returns 403.
+_LI_BOT_UA = "facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)"
+_LI_PHOTO_RE = re.compile(
+    r'(https://media\.licdn\.com/dms/image/[^"\\<>\s]+profile-displayphoto[^"\\<>\s]*\?e=\d+[^"\\<>\s]+t=[A-Za-z0-9_\-]+)'
+)
+
+
+def scrape_linkedin_photo_url(linkedin_url: str) -> str:
+    """Fetch a LinkedIn /in/ page as a social-card bot and extract the
+    first signed profile-displayphoto URL. Returns "" on failure.
+
+    This bypasses the gap where EnrichLayer's `profile_pic_url` is null
+    for some profiles (private / connections-only / scraper miss) but
+    LinkedIn still serves the photo URL inline to crawlers like Facebook.
+    """
+    if not linkedin_url:
+        return ""
+    s = linkedin_url.strip()
+    if not s.lower().startswith(("http://", "https://")):
+        s = "https://" + s.lstrip("/")
+    try:
+        resp = requests.get(
+            s,
+            headers={"User-Agent": _LI_BOT_UA},
+            timeout=15,
+            allow_redirects=True,
+        )
+    except requests.RequestException:
+        return ""
+    if resp.status_code != 200 or not resp.text:
+        return ""
+    # &amp; entities have to be decoded before the regex sees them.
+    text = _html.unescape(resp.text)
+    m = _LI_PHOTO_RE.search(text)
+    return m.group(1) if m else ""
 
 
 def gravatar_url(email: str) -> str:
