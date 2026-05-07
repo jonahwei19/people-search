@@ -1,6 +1,28 @@
 # People Search
 
-Upload a list of people → automatic enrichment (LinkedIn + non-LinkedIn web data) → natural-language search with LLM-as-judge scoring. Multi-tenant, deployed on Vercel + Supabase.
+Upload a list of people → automatic enrichment (LinkedIn + non-LinkedIn web data) → natural-language search with LLM-as-judge scoring. Multi-tenant.
+
+## ⚠️ Deploy (read this first)
+
+**Live URL: https://agents.tail83bd73.ts.net/people-search/** — runs on the
+agents EC2 box, **not Vercel**. Vercel still resolves but only serves a
+"moved" page now.
+
+**Pushing to `main` does NOT deploy.** You have to run the deploy script
+from your local checkout:
+
+```bash
+bash tools/aws/deploy.sh        # build + rsync + restart systemd unit (~5s)
+bash tools/aws/deploy.sh quick  # rsync only, no venv update or restart
+```
+
+Requires `ssh agents` to work (Tailscale must be up). The script builds with
+`APP_BASE=/people-search` so the path-prefixed URL works, then restores the
+local `cloud/public/index.html` to the Vercel-empty default afterward.
+
+The bottom-left version stamp on the live site shows the deployed commit
+sha — verify it matches your latest commit. Full migration spec in
+[`MIGRATION.md`](MIGRATION.md).
 
 ## What it does
 

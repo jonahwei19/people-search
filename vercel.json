@@ -6,7 +6,8 @@
       "memory": 1024
     }
   },
-  "rewrites": [
-    { "source": "/", "destination": "/moved.html" }
+  "redirects": [
+    { "source": "/", "destination": "https://agents.tail83bd73.ts.net/people-search/", "permanent": false },
+    { "source": "/index.html", "destination": "https://agents.tail83bd73.ts.net/people-search/", "permanent": false }
   ]
 }
